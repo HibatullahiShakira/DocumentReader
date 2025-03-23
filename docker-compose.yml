@@ -1,7 +1,8 @@
 services:
   web:
-    build: .
-    command: python run.py
+    image: ${DOCKER_HUB_REPO}:latest
+    # build: .
+    command: python run.py  # This will use the Flask development server (as defined in run.py)
     ports:
       - "5000:5000"
     env_file:
@@ -9,6 +10,11 @@ services:
     environment:
       - FLASK_ENV=${FLASK_ENV}
       - FLASK_DEBUG=${FLASK_DEBUG}
+      - FLASK_APP=run.py
+      - SQLALCHEMY_DATABASE_URI=${SQLALCHEMY_DATABASE_URI}
+      - broker_url=${broker_url}
+      - result_backend=${result_backend}
+      - REDIS_URL=${REDIS_URL}
     volumes:
       - .:/app
     user: appuser
@@ -19,12 +25,21 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_healthy
+    # For production, uncomment the following line to use gunicorn
+    # command: gunicorn --bind 0.0.0.0:5000 run:app
 
   celery:
-    build: .
+    image: ${DOCKER_HUB_REPO}:latest
+    # build: .
     command: sh -c "sleep 30 && celery -A app.celery worker --loglevel=info"
     env_file:
       - .env
+    environment:
+      - FLASK_ENV=${FLASK_ENV}
+      - SQLALCHEMY_DATABASE_URI=${SQLALCHEMY_DATABASE_URI}
+      - broker_url=${broker_url}
+      - result_backend=${result_backend}
+      - REDIS_URL=${REDIS_URL}
     volumes:
       - .:/app
     user: appuser
