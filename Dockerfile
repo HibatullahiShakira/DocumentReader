@@ -4,24 +4,33 @@ LABEL authors="Shakirah"
 
 WORKDIR /app
 
-COPY requirements.txt .
 
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
+    libpq5 \
+    && apt-get install --reinstall libpq5 \
     && rm -rf /var/lib/apt/lists/*
+
+
+COPY requirements.txt .
+
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-
 RUN pip install gunicorn
 
-RUN useradd -m -u 1000 appuser
+
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+
+
 USER appuser
 
-COPY . .
+COPY --chown=appuser:appuser . .
+
 
 EXPOSE 5000
 
-# Default command for development (can be overridden in docker-compose.yml for production)
-CMD ["flask", "run", "--host=0.0.0.0", "--port=5000"]
+
+CMD ["python", "run.py"]

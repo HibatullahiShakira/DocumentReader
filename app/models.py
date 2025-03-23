@@ -21,7 +21,7 @@ class Slide(db.Model):
     slide_number = db.Column(db.Integer, nullable=False)
     title = db.Column(db.String(255), nullable=True)
     content = db.Column(db.Text, nullable=True)
-    metadata = db.Column(db.JSON, nullable=True)
+    slide_metadata = db.Column(db.JSON, nullable=True)
 
     def __repr__(self):
         return f'<Slide {self.id} - Slide {self.slide_number}>'

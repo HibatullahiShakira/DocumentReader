@@ -2,9 +2,119 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Title</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Reader</title>
+
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- Font Awesome for icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
+<div class="container">
+    <!-- Header Section -->
+    <header>
+        <h1><i class="fas fa-file-alt"></i> Document Reader</h1>
+        <p class="subtitle">Upload and analyze your documents effortlessly</p>
+    </header>
 
+    <!-- File Upload Section -->
+    <section id="upload-section">
+        <form id="uploadForm" enctype="multipart/form-data">
+            <label for="fileUpload" class="upload-label">
+                <i class="fas fa-cloud-upload-alt"></i> Choose a file
+            </label>
+            <input id="fileUpload" type="file" name="file" accept=".pdf,.pptx" required hidden>
+            <button type="submit"><i class="fas fa-upload"></i> Upload Document</button>
+        </form>
+        <div id="message"></div>
+        <div id="result"></div>
+    </section>
+
+    <!-- Processed Documents Section -->
+    <section id="documents-section">
+        <h2><i class="fas fa-folder-open"></i> Processed Documents</h2>
+        {% if error %}
+        <div class="message error">{{ error }}</div>
+        {% endif %}
+        {% if files %}
+        <table>
+            <thead>
+            <tr>
+                <th>Filename</th>
+                <th>Status</th>
+                <th>Created At</th>
+                <th>Details</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for file in files %}
+            <tr>
+                <td><i class="fas fa-file"></i> {{ file.filename }}</td>
+                <td>
+                    {% if file.status == 'SUCCESS' %}
+                    <span class="status success">✔ {{ file.status }}</span>
+                    {% elif file.status == 'FAILURE' %}
+                    <span class="status failure">✖ {{ file.status }}</span>
+                    {% else %}
+                    <span class="status processing"><i class="fas fa-spinner fa-spin"></i> {{ file.status }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ file.created_at }}</td>
+                <td>
+                    {% if file.status == 'SUCCESS' and file.slides %}
+                    <button class="details-button" onclick="toggleSlideDetails({{ file.id }})">
+                        <i class="fas fa-eye"></i> View Slides
+                    </button>
+                    <div id="slide-details-{{ file.id }}" class="slide-details" style="display: none;">
+                        <table class="nested-table">
+                            <thead>
+                            <tr>
+                                <th>Slide Number</th>
+                                <th>Title</th>
+                                <th>Content</th>
+                                <th>Metadata</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {% for slide in file.slides %}
+                            <tr>
+                                <td>{{ slide.slide_number }}</td>
+                                <td>{{ slide.title }}</td>
+                                <td>{{ slide.content | truncate(100) }}</td>
+                                <td>
+                                    {% if slide.slide_metadata %}
+                                    <ul>
+                                        {% for key, value in slide.slide_metadata.items() %}
+                                        <li>{{ key }}: {{ value }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                    {% else %}
+                                    No metadata
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% elif file.status == 'FAILURE' %}
+                    <div class="message error">Processing failed</div>
+                    {% else %}
+                    <div class="message">{{ file.status }}</div>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="no-documents"><i class="fas fa-info-circle"></i> No documents processed yet.</p>
+        {% endif %}
+    </section>
+</div>
+
+<script src="/static/script.js"></script>
 </body>
 </html>

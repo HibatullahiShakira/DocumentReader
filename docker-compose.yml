@@ -1,8 +1,7 @@
 services:
   web:
     image: ${DOCKER_HUB_REPO}:latest
-    # build: .
-    command: python run.py  # This will use the Flask development server (as defined in run.py)
+    command: python run.py
     ports:
       - "5000:5000"
     env_file:
@@ -22,16 +21,17 @@ services:
       db:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    networks:
+      - app-network
     # For production, uncomment the following line to use gunicorn
     # command: gunicorn --bind 0.0.0.0:5000 run:app
 
   celery:
     image: ${DOCKER_HUB_REPO}:latest
-    # build: .
-    command: sh -c "sleep 30 && celery -A app.celery worker --loglevel=info"
+    command: celery -A app.celery worker --loglevel=info
     env_file:
       - .env
     environment:
@@ -47,9 +47,11 @@ services:
       rabbitmq:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       web:
         condition: service_started
+    networks:
+      - app-network
 
   db:
     image: postgres:15
@@ -66,11 +68,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - app-network
 
   redis:
     image: redis:7.4.2
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
 
   rabbitmq:
     image: rabbitmq:3.13-management
@@ -90,6 +101,12 @@ services:
           memory: 512m
         reservations:
           memory: 256m
+    networks:
+      - app-network
 
 volumes:
   postgres_data:
+
+networks:
+  app-network:
+    driver: bridge

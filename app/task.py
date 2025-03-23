@@ -1,3 +1,4 @@
+# app/tasks.py
 from app import celery, db
 from app.models import File, Slide
 import pdfplumber
@@ -68,9 +69,10 @@ def process_file(self, file_id, filepath):
                 slide_number=slide_data['slide_number'],
                 title=slide_data['title'],
                 content=slide_data['content'],
-                metadata=slide_data['metadata']
+                slide_metadata=slide_data['metadata']
             )
             db.session.add(slide)
+
         file.status = 'SUCCESS'
         db.session.commit()
 
@@ -78,7 +80,6 @@ def process_file(self, file_id, filepath):
 
         return {'status': 'SUCCESS', 'slides': slides_data}
     except Exception as e:
-        if 'file' in locals() and file:
-            file.status = 'FAILURE'
-            db.session.commit()
+        file.status = 'FAILURE'
+        db.session.commit()
         raise e

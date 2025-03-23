@@ -73,7 +73,7 @@ def file_status(file_id):
                 'slide_number': slide.slide_number,
                 'title': slide.title,
                 'content': slide.content,
-                'metadata': slide.metadata
+                'metadata': slide.slide_metadata
             }
             for slide in slides
         ]
