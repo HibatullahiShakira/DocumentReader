@@ -1,18 +1,26 @@
 # DocumentReader
 
-A Flask-based web application for parsing pitch deck documents (PDF/PPTX) and displaying extracted data in a dashboard.
+A web application for parsing and processing pitch deck documents (PDF and PPTX) and displaying the extracted information in a table format.
 
-## Setup Instructions
+## Features
+- Upload PDF and PPTX files via a REST API.
+- Parse documents to extract slide titles, text content, and metadata.
+- Store extracted data in a PostgreSQL database.
+- Display processed data in a table on a simple dashboard.
+- Asynchronous processing using Celery with RabbitMQ and Redis.
+- Containerized with Docker and Docker Compose.
+- CI/CD pipeline with GitHub Actions to build and push Docker images to Docker Hub.
 
-### Prerequisites
-- Python 3.12
+## Prerequisites
 - Docker and Docker Compose
+- Python 3.12
 - Git
+- A Docker Hub account
 
-### Installation
-1. Clone the repository:
+## Setup and Configuration
+1. **Clone the Repository**:
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/HibatullahShakira/DocumentReader.git
    cd DocumentReader
    
 2. Set up a virtual environment:
