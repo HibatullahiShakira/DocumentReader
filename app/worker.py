@@ -1,8 +1,6 @@
-import logger
 import redis
 import json
 import os
-import logging
 from datetime import datetime
 import psycopg2
 from psycopg2 import Error
@@ -20,27 +18,24 @@ try:
         decode_responses=True
     )
     redis_client.ping()  # Test the connection
-    logger.info("Successfully connected to Redis")
+    print("Successfully connected to Redis")
 except redis.ConnectionError as e:
-    logger.error(f"Failed to connect to Redis: {e}")
+    print(f"Failed to connect to Redis: {e}")
     raise
 
 # Database configuration
 DB_CONFIG = {
-    'dbname': os.getenv('POSTGRES_DB', 'pitch_decks'),
-    'user': os.getenv('POSTGRES_USER', 'postgres'),
-    'password': os.getenv('POSTGRES_PASSWORD', 'password'),
-    'host': os.getenv('POSTGRES_HOST', 'db'),
-    'port': os.getenv('POSTGRES_PORT', '5432')
+    'dbname': os.getenv('POSTGRES_DB'),
+    'user': os.getenv('POSTGRES_USER'),
+    'password': os.getenv('POSTGRES_PASSWORD'),
+    'host': os.getenv('POSTGRES_HOST'),
+    'port': os.getenv('POSTGRES_PORT')
 }
 
 # Initialize sentiment analyzer
 sia = SentimentIntensityAnalyzer()
 
-# Setup logging
-logging.basicConfig(level=logging.DEBUG)  # Set to DEBUG for more detail
-logger = logging.getLogger(__name__)
-logger.debug("Starting worker")
+print("Starting worker")
 
 class PitchDeckParser:
     def parse_pdf(self, file_path):
@@ -52,7 +47,7 @@ class PitchDeckParser:
                     content += page.extract_text() + "\n"
                 return content, len(pdf_reader.pages)
         except Exception as e:
-            logger.error(f"PDF parsing error: {e}")
+            print(f"PDF parsing error: {e}")
             raise
 
     def parse_pptx(self, file_path):
@@ -65,7 +60,7 @@ class PitchDeckParser:
                         content += shape.text + "\n"
             return content, len(prs.slides)
         except Exception as e:
-            logger.error(f"PPTX parsing error: {e}")
+            print(f"PPTX parsing error: {e}")
             raise
 
     def analyze_content(self, text):
@@ -126,14 +121,14 @@ class PitchDeckParser:
             redis_client.delete('dashboard_data')
             return deck_id
         except Error as e:
-            logger.error(f"Database storage error: {e}")
+            print(f"Database storage error: {e}")
             raise
 
 def process_queue():
     parser = PitchDeckParser()
     while True:
         try:
-            logger.debug("Waiting for job in processing queue")
+            print("Waiting for job in processing queue")
             job_data = redis_client.brpop('processing_queue', timeout=5)
             if job_data:
                 _, job_json = job_data
@@ -142,28 +137,28 @@ def process_queue():
                 filename = job['filename']
 
                 # Process file
-                logger.debug(f"Processing file: {filename}")
+                print(f"Processing file: {filename}")
                 if filename.endswith('.pdf'):
                     content, slide_count = parser.parse_pdf(file_path)
                 else:
                     content, slide_count = parser.parse_pptx(file_path)
 
                 # Analyze content
-                logger.debug("Analyzing content")
+                print("Analyzing content")
                 analysis = parser.analyze_content(content)
 
                 # Store in database
-                logger.debug("Storing data in database")
+                print("Storing data in database")
                 parser.store_data(filename, content, slide_count, analysis)
 
                 # Clean up
-                logger.debug("Cleaning up temporary file")
+                print("Cleaning up temporary file")
                 if os.path.exists(file_path):
                     os.remove(file_path)
-                logger.info(f"Processed file: {filename}")
+                print(f"Processed file: {filename}")
         except Exception as e:
-            logger.error(f"Queue processing error: {e}")
+            print(f"Queue processing error: {e}")
 
 if __name__ == '__main__':
-    logger.debug("Starting queue processing")
+    print("Starting queue processing")
     process_queue()

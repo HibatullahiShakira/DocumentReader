@@ -1,4 +1,3 @@
-import logger
 from flask import Flask
 import os
 import PyPDF2
@@ -8,13 +7,11 @@ import psycopg2
 from psycopg2 import Error
 import redis
 import json
-import logging
 from nltk.sentiment import SentimentIntensityAnalyzer
 import nltk
 from app.routes import init_routes
 
 app = Flask(__name__)
-
 
 UPLOAD_FOLDER = 'uploads'
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
@@ -38,21 +35,18 @@ try:
         decode_responses=True
     )
     redis_client.ping()  # Test the connection
-    logger.info("Successfully connected to Redis")
+    print("Successfully connected to Redis")
 except redis.ConnectionError as e:
-    logger.error(f"Failed to connect to Redis: {e}")
+    print(f"Failed to connect to Redis: {e}")
     raise
 
 # Initialize sentiment analyzer
 sia = SentimentIntensityAnalyzer()
 
-# Setup logging
-logging.basicConfig(level=logging.DEBUG)  # Set to DEBUG for more detail
-logger = logging.getLogger(__name__)
-logger.debug("Starting Flask application")
+print("Starting Flask application")
 
 def init_db():
-    logger.debug("Initializing database")
+    print("Initializing database")
     try:
         conn = psycopg2.connect(**DB_CONFIG)
         cur = conn.cursor()
@@ -76,9 +70,9 @@ def init_db():
         conn.commit()
         cur.close()
         conn.close()
-        logger.info("Database initialized successfully")
+        print("Database initialized successfully")
     except Error as e:
-        logger.error(f"Database initialization error: {e}")
+        print(f"Database initialization error: {e}")
         raise
 
 class PitchDeckParser:
@@ -91,7 +85,7 @@ class PitchDeckParser:
                     content += page.extract_text() + "\n"
                 return content, len(pdf_reader.pages)
         except Exception as e:
-            logger.error(f"PDF parsing error: {e}")
+            print(f"PDF parsing error: {e}")
             raise
 
     def parse_pptx(self, file_path):
@@ -104,7 +98,7 @@ class PitchDeckParser:
                         content += shape.text + "\n"
             return content, len(prs.slides)
         except Exception as e:
-            logger.error(f"PPTX parsing error: {e}")
+            print(f"PPTX parsing error: {e}")
             raise
 
     def analyze_content(self, text):
@@ -167,7 +161,7 @@ class PitchDeckParser:
             redis_client.delete('dashboard_data')
             return deck_id
         except Error as e:
-            logger.error(f"Database storage error: {e}")
+            print(f"Database storage error: {e}")
             raise
 
 parser = PitchDeckParser()
@@ -176,9 +170,9 @@ parser = PitchDeckParser()
 init_routes(app, redis_client, parser, DB_CONFIG)
 
 if __name__ == '__main__':
-    logger.debug("Creating upload folder")
+    print("Creating upload folder")
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    logger.debug("Calling init_db")
+    print("Calling init_db")
     init_db()
-    logger.debug("Starting Flask server")
+    print("Starting Flask server")
     app.run(host='0.0.0.0', port=5000)
