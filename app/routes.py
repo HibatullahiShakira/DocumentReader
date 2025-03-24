@@ -1,88 +1,77 @@
-# app/routes.py
-from flask import Blueprint, request, jsonify, render_template
-from app import db
-from app.models import File, Slide
-from app.task import process_file
 import os
-from sqlalchemy.exc import SQLAlchemyError
 
-main = Blueprint('main', __name__)
+from flask import render_template, request, jsonify
+import redis
+import json
+import psycopg2
+from psycopg2 import Error
+from werkzeug.utils import secure_filename
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-@main.route('/')
-def index():
-    try:
-        files = File.query.order_by(File.created_at.desc()).all()
-        return render_template('index.html', files=files)
-    except SQLAlchemyError as e:
-        return render_template('index.html', files=[], error="Database error: Unable to load files")
+def init_routes(app, redis_client, parser, DB_CONFIG):
+    @app.route('/')
+    def dashboard():
+        try:
+            # Check Redis cache first
+            cached_data = redis_client.get('dashboard_data')
+            if cached_data:
+                logger.info("Serving dashboard from cache")
+                data = json.loads(cached_data)
+            else:
+                # Fetch from database if not in cache
+                conn = psycopg2.connect(**DB_CONFIG)
+                cur = conn.cursor()
+                cur.execute("SELECT * FROM pitch_decks ORDER BY upload_date DESC")
+                data = cur.fetchall()
+                cur.close()
+                conn.close()
 
+                redis_client.setex('dashboard_data', 300, json.dumps(data))
 
-@main.route('/upload', methods=['POST'])
-def upload_file():
-    try:
+            return render_template('dashboard.html', data=data)
+        except Error as e:
+            logger.error(f"Dashboard data fetch error: {e}")
+            return jsonify({'error': 'Internal server error'}), 500
+
+    @app.route('/api/upload', methods=['POST'])
+    def upload_file():
         if 'file' not in request.files:
-            return jsonify({'status': 'error', 'message': 'No file part'}), 400
+            return jsonify({'error': 'No file provided'}), 400
 
         file = request.files['file']
-        if file.filename == '':
-            return jsonify({'status': 'error', 'message': 'No selected file'}), 400
 
-        if not (file.filename.endswith('.pdf') or file.filename.endswith('.pptx')):
-            return jsonify({'status': 'error', 'message': 'Only PDF and PPTX files are allowed'}), 400
+        if not file or file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
 
-        file.seek(0, os.SEEK_END)
-        file_size = file.tell()
-        file.seek(0)
-
-        MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB (limit)
-        if file_size > MAX_FILE_SIZE:
-            return jsonify({'status': 'error', 'message': 'File size exceeds the maximum limit of 10 MB'}), 400
-
-        upload_folder = os.getenv('UPLOAD_FOLDER', 'uploads')
-        os.makedirs(upload_folder, exist_ok=True)
-        filepath = os.path.join(upload_folder, file.filename)
-        file.save(filepath)
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'Unsupported file format'}), 400
 
         try:
-            new_file = File(filename=file.filename, filepath=filepath)
-            db.session.add(new_file)
-            db.session.commit()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            os.remove(filepath)
-            return jsonify({'status': 'error', 'message': 'Database error: Unable to save file'}), 500
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
 
-        process_file.delay(new_file.id, filepath)
-
-        return jsonify({'status': 'success', 'message': 'File uploaded and processing started', 'file_id': new_file.id})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Error processing file: {str(e)}'}), 500
-
-
-@main.route('/file/<int:file_id>')
-def file_status(file_id):
-    try:
-        file = File.query.get(file_id)
-        if not file:
-            return jsonify({'status': 'error', 'message': 'File not found'}), 404
-
-        slides = Slide.query.filter_by(file_id=file_id).all()
-        slides_data = [
-            {
-                'slide_number': slide.slide_number,
-                'title': slide.title,
-                'content': slide.content,
-                'metadata': slide.slide_metadata
+            # Add to Redis queue for processing
+            job = {
+                'filename': filename,
+                'file_path': file_path,
+                'timestamp': datetime.now().isoformat()
             }
-            for slide in slides
-        ]
+            redis_client.lpush('processing_queue', json.dumps(job))
 
-        return jsonify({
-            'status': file.status,
-            'filename': file.filename,
-            'created_at': file.created_at.isoformat(),
-            'slides': slides_data
-        })
-    except SQLAlchemyError as e:
-        return jsonify({'status': 'error', 'message': 'Database error: Unable to retrieve file'}), 500
+            return jsonify({
+                'message': 'File queued for processing',
+                'filename': filename
+            }), 202
+
+        except Exception as e:
+            logger.error(f"Upload error: {e}")
+            return jsonify({'error': str(e)}), 500
+
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'pdf', 'pptx'}

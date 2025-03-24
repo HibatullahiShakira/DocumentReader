@@ -1,44 +1,32 @@
 services:
-  web:
+  api:
     image: ${DOCKER_HUB_REPO}:latest
-    command: python run.py
+    command: python app/app.py
     ports:
       - "5000:5000"
+    volumes:
+      - ./uploads:/app/uploads
     env_file:
       - .env
     environment:
       - FLASK_ENV=${FLASK_ENV}
-      - FLASK_DEBUG=${FLASK_DEBUG}
-      - FLASK_APP=run.py
-      - SQLALCHEMY_DATABASE_URI=${SQLALCHEMY_DATABASE_URI}
-      - broker_url=${broker_url}
-      - result_backend=${result_backend}
-      - REDIS_URL=${REDIS_URL}
-    user: appuser
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
     networks:
       - app-network
 
-  celery:
+  worker:
     image: ${DOCKER_HUB_REPO}:latest
-    command: python app/celery_worker.py
+    command: python app/worker.py
+    volumes:
+      - ./uploads:/app/uploads
     env_file:
       - .env
-    environment:
-      - FLASK_ENV=${FLASK_ENV}
-      - SQLALCHEMY_DATABASE_URI=${SQLALCHEMY_DATABASE_URI}
-      - broker_url=${broker_url}
-      - result_backend=${result_backend}
-      - REDIS_URL=${REDIS_URL}
-    user: appuser
     depends_on:
-      rabbitmq:
+      db:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -46,15 +34,13 @@ services:
       - app-network
 
   db:
-    image: postgres:15
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    env_file:
-      - .env
+    image: postgres:13
     environment:
+      - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -64,7 +50,7 @@ services:
       - app-network
 
   redis:
-    image: redis:7.4.2
+    image: redis:6
     ports:
       - "6379:6379"
     healthcheck:
@@ -75,29 +61,8 @@ services:
     networks:
       - app-network
 
-  rabbitmq:
-    image: rabbitmq:3.13-management
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    healthcheck:
-      test: ["CMD", "rabbitmqctl", "status"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    volumes:
-      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-        reservations:
-          memory: 256m
-    networks:
-      - app-network
-
 volumes:
-  postgres_data:
+  pgdata:
 
 networks:
   app-network:
