@@ -27,7 +27,7 @@ services:
 
   celery:
     image: ${DOCKER_HUB_REPO}:latest
-    command: celery -A app.celery_config.celery worker --loglevel=info
+    command: python app/celery_worker.py
     env_file:
       - .env
     environment:
