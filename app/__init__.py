@@ -9,7 +9,7 @@ from app.celery_config import make_celery
 db = SQLAlchemy()
 redis_client = None
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates')
 app.config.from_object(DevelopmentConfig)
 celery = make_celery(app)
 
