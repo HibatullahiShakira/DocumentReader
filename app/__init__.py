@@ -9,9 +9,8 @@ load_dotenv()
 
 db = SQLAlchemy()
 
-from app.celery_config import make_celery
+from app.celery_config import celery, init_celery
 
-celery = None
 
 def create_app():
     print("Starting create_app()", flush=True)
@@ -60,8 +59,7 @@ def create_app():
 
     # Initialize Celery
     print("Initializing Celery", flush=True)
-    global celery
-    celery = make_celery(app)
+    init_celery(app)
 
     print(f"Upload folder created at: {upload_folder}", flush=True)
     print("Routes blueprint registered", flush=True)
