@@ -13,7 +13,6 @@ from app.celery_config import make_celery
 
 celery = None
 
-
 def create_app():
     print("Starting create_app()", flush=True)
     app = Flask(__name__, template_folder=os.path.abspath(os.path.join(os.path.dirname(__file__), 'templates')))
@@ -63,7 +62,6 @@ def create_app():
     print("Initializing Celery", flush=True)
     global celery
     celery = make_celery(app)
-    app.celery = celery  # Still attach to app for compatibility
 
     print(f"Upload folder created at: {upload_folder}", flush=True)
     print("Routes blueprint registered", flush=True)

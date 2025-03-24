@@ -1,4 +1,3 @@
-# app/config.py
 import os
 from dotenv import load_dotenv
 
@@ -15,29 +14,23 @@ class Config:
     REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/0')
 
     # Celery configuration
-    BROKER_URL = 'amqp://guest:guest@rabbitmq:5672//'
-    RESULT_BACKEND = 'redis://redis:6379/0'
-
-    CELERY_ACCEPT_CONTENT = ['json']
-    CELERY_TASK_SERIALIZER = 'json'
-    CELERY_RESULT_SERIALIZER = 'json'
-    CELERY_TIMEZONE = 'UTC'
+    broker_url = os.getenv('broker_url', 'amqp://guest:guest@rabbitmq:5672//')
+    result_backend = os.getenv('result_backend', 'redis://redis:6379/0')
+    accept_content = ['json']
+    task_serializer = 'json'
+    result_serializer = 'json'
+    timezone = 'UTC'
+    enable_utc = True
+    broker_connection_retry_on_startup = True
 
 
 class DevelopmentConfig(Config):
     FLASK_ENV = 'development'
     DEBUG = True
-    SQLALCHEMY_DATABASE_URI = os.environ.get('SQLALCHEMY_DATABASE_URI')
-    REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
-    BROKER_URL = os.environ.get('broker_url', 'amqp://guest:guest@rabbitmq:5672//')
-    RESULT_BACKEND = os.environ.get('result_backend', 'redis://redis:6379/0')
+    SQLALCHEMY_DATABASE_URI = os.getenv('SQLALCHEMY_DATABASE_URI')
 
 
 class ProductionConfig(Config):
     FLASK_ENV = 'production'
     DEBUG = False
-    SQLALCHEMY_DATABASE_URI = os.environ.get('SQLALCHEMY_DATABASE_URI')
-    REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
-    # Celery settings
-    broker_url = os.environ.get('broker_url', 'amqp://guest:guest@rabbitmq:5672//')
-    result_backend = os.environ.get('result_backend', 'redis://redis:6379/0')
+    SQLALCHEMY_DATABASE_URI = os.getenv('SQLALCHEMY_DATABASE_URI')

@@ -1,27 +1,23 @@
-
 from celery import Celery
-
 
 def make_celery(app):
     celery = Celery(app.import_name)
 
     celery_config = {
-        'BROKER_URL': app.config['BROKER_URL'],
-        'RESULT_BACKEND': app.config['RESULT_BACKEND'],
-        'CELERY_ACCEPT_CONTENT': app.config['CELERY_ACCEPT_CONTENT'],
-        'CELERY_TASK_SERIALIZER': app.config['CELERY_TASK_SERIALIZER'],
-        'CELERY_RESULT_SERIALIZER': app.config['CELERY_RESULT_SERIALIZER'],
-        'CELERY_TIMEZONE': app.config['CELERY_TIMEZONE'],
-        'BROKER_CONNECTION_RETRY_ON_STARTUP': True,
+        'broker_url': app.config['broker_url'],
+        'result_backend': app.config['result_backend'],
+        'accept_content': app.config['accept_content'],
+        'task_serializer': app.config['task_serializer'],
+        'result_serializer': app.config['result_serializer'],
+        'timezone': app.config['timezone'],
+        'enable_utc': app.config['enable_utc'],
+        'broker_connection_retry_on_startup': app.config['broker_connection_retry_on_startup'],
     }
     celery.conf.update(celery_config)
-    celery.conf.update(app.config)
 
-    # print("make_celery: Celery broker after config:", celery.conf.get('BROKER_URL'))
-    # print("make_celery: Celery backend after config:", celery.conf.get('RESULT_BACKEND'))
-
-    # Ensure the configuration is applied when the worker starts
-    celery.config_from_object(celery_config, force=True)
+    # Debugging (uncomment if needed)
+    # print("make_celery: Celery broker after config:", celery.conf.get('broker_url'), flush=True)
+    # print("make_celery: Celery backend after config:", celery.conf.get('result_backend'), flush=True)
 
     class ContextTask(celery.Task):
         def __call__(self, *args, **kwargs):
