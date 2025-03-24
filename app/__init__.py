@@ -1,47 +1,78 @@
-# app/__init__.py
-import os
-from flask import Flask, jsonify
+from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.sql import text
+import os
 import redis
-from app.config import DevelopmentConfig
-from app.celery_config import make_celery
+from dotenv import load_dotenv
+
+load_dotenv()
 
 db = SQLAlchemy()
-redis_client = None
-
-app = Flask(__name__, template_folder='templates')
-app.config.from_object(DevelopmentConfig)
-celery = make_celery(app)
 
 
 def create_app():
-    global redis_client
+    print("Starting create_app()", flush=True)
+    app = Flask(__name__, template_folder=os.path.abspath(os.path.join(os.path.dirname(__file__), 'templates')))
 
+    print(f"FLASK_ENV: {os.getenv('FLASK_ENV')}", flush=True)
+    if os.getenv('FLASK_ENV') == 'development':
+        print("Loading DevelopmentConfig", flush=True)
+        app.config.from_object('app.config.DevelopmentConfig')
+    else:
+        print("Loading ProductionConfig", flush=True)
+        app.config.from_object('app.config.ProductionConfig')
+
+    print("SQLALCHEMY_DATABASE_URI:", app.config.get('SQLALCHEMY_DATABASE_URI'), flush=True)
+
+    upload_folder = app.config.get('UPLOAD_FOLDER', 'uploads')
+    if not os.path.exists(upload_folder):
+        os.makedirs(upload_folder)
+        print(f"Upload folder created at: {upload_folder}", flush=True)
+
+    print("Initializing SQLAlchemy", flush=True)
     db.init_app(app)
 
-    try:
-        redis_client = redis.Redis.from_url(app.config.get('REDIS_URL', 'redis://localhost:6379/0'))
+    print("Testing database connection", flush=True)
+    with app.app_context():
+        try:
+            db.session.execute(text('SELECT 1'))  # Wrap the query in text()
+            print("Successfully connected to the database", flush=True)
+        except Exception as e:
+            print(f"Failed to connect to the database: {e}", flush=True)
+            raise e
 
-        redis_client.ping()
-        print("Successfully connected to Redis")
-    except Exception as e:
-        print(f"Warning: Could not connect to Redis: {e}")
-        print("Continuing without Redis. Some features (e.g., Celery tasks) may not work.")
-        redis_client = None
-
+    print("Testing Redis connection", flush=True)
     try:
-        if not os.path.exists(app.config['UPLOAD_FOLDER']):
-            os.makedirs(app.config['UPLOAD_FOLDER'])
-        print(f"Upload folder created at: {app.config['UPLOAD_FOLDER']}")
-    except Exception as e:
-        print(f"Error creating upload folder: {e}")
+        r = redis.Redis.from_url(app.config['REDIS_URL'])
+        r.ping()
+        print("Successfully connected to Redis", flush=True)
+    except redis.ConnectionError as e:
+        print(f"Failed to connect to Redis: {e}", flush=True)
         raise e
 
-    try:
-        from app.routes import main
-        app.register_blueprint(main)
-        print("Routes blueprint registered")
-    except ImportError:
-        print("No routes blueprint found. Skipping blueprint registration.")
+    print("Initializing Celery", flush=True)
+    from app.celery_config import make_celery
+    celery = make_celery(app)
+    app.celery = celery
 
+    print(f"Upload folder created at: {upload_folder}", flush=True)
+    print("Routes blueprint registered", flush=True)
+
+    print("Importing models", flush=True)
+    from app.models import File, Slide
+
+    print("Creating database tables", flush=True)
+    with app.app_context():
+        try:
+            db.create_all()
+            print("Database tables created successfully", flush=True)
+        except Exception as e:
+            print(f"Failed to create database tables: {e}", flush=True)
+            raise e
+
+    print("Registering blueprints", flush=True)
+    from app.routes import main as main_blueprint
+    app.register_blueprint(main_blueprint)
+
+    print("create_app() completed", flush=True)
     return app

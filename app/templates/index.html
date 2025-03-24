@@ -5,10 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document Reader</title>
 
-    <link rel="stylesheet" href="/style.css">
-    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
-    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -19,7 +17,6 @@
         <p class="subtitle">Upload and analyze your documents effortlessly</p>
     </header>
 
-    <!-- File Upload Section -->
     <section id="upload-section">
         <form id="uploadForm" enctype="multipart/form-data">
             <label for="fileUpload" class="upload-label">
@@ -115,6 +112,6 @@
     </section>
 </div>
 
-<script src="/script.js"></script>
+<script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

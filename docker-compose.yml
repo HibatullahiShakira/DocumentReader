@@ -14,8 +14,6 @@ services:
       - broker_url=${broker_url}
       - result_backend=${result_backend}
       - REDIS_URL=${REDIS_URL}
-    volumes:
-      - .:/app
     user: appuser
     depends_on:
       db:
@@ -26,8 +24,6 @@ services:
         condition: service_healthy
     networks:
       - app-network
-    # For production, uncomment the following line to use gunicorn
-    # command: gunicorn --bind 0.0.0.0:5000 run:app
 
   celery:
     image: ${DOCKER_HUB_REPO}:latest
@@ -40,8 +36,6 @@ services:
       - broker_url=${broker_url}
       - result_backend=${result_backend}
       - REDIS_URL=${REDIS_URL}
-    volumes:
-      - .:/app
     user: appuser
     depends_on:
       rabbitmq:

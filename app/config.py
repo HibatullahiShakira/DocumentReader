@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class Config:
     SECRET_KEY = os.getenv('SECRET_KEY') or 'my_secret_key_here'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -22,17 +23,22 @@ class Config:
     CELERY_RESULT_SERIALIZER = 'json'
     CELERY_TIMEZONE = 'UTC'
 
-class DevelopmentConfig(Config):
-    DEBUG = True
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL')
-    SQLALCHEMY_ECHO = True
 
-class TestingConfig(Config):
-    TESTING = True
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
-    SQLALCHEMY_ECHO = True
+class DevelopmentConfig(Config):
+    FLASK_ENV = 'development'
+    DEBUG = True
+    SQLALCHEMY_DATABASE_URI = os.environ.get('SQLALCHEMY_DATABASE_URI')
+    REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+    # Celery settings
+    broker_url = os.environ.get('broker_url', 'amqp://guest:guest@rabbitmq:5672//')
+    result_backend = os.environ.get('result_backend', 'redis://redis:6379/0')
+
 
 class ProductionConfig(Config):
+    FLASK_ENV = 'production'
     DEBUG = False
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL')
-    SQLALCHEMY_ECHO = False
+    SQLALCHEMY_DATABASE_URI = os.environ.get('SQLALCHEMY_DATABASE_URI')
+    REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+    # Celery settings
+    broker_url = os.environ.get('broker_url', 'amqp://guest:guest@rabbitmq:5672//')
+    result_backend = os.environ.get('result_backend', 'redis://redis:6379/0')
