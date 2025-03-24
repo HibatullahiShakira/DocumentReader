@@ -8,8 +8,8 @@ import PyPDF2
 import pptx
 from nltk.sentiment import SentimentIntensityAnalyzer
 import nltk
+nltk.download('vader_lexicon')
 
-# Redis configuration
 try:
     redis_client = redis.Redis(
         host=os.getenv('REDIS_HOST', 'redis'),
@@ -17,24 +17,21 @@ try:
         db=0,
         decode_responses=True
     )
-    redis_client.ping()  # Test the connection
+    redis_client.ping()
     print("Successfully connected to Redis")
 except redis.ConnectionError as e:
     print(f"Failed to connect to Redis: {e}")
     raise
 
-# Database configuration
 DB_CONFIG = {
-    'dbname': os.getenv('POSTGRES_DB'),
-    'user': os.getenv('POSTGRES_USER'),
-    'password': os.getenv('POSTGRES_PASSWORD'),
-    'host': os.getenv('POSTGRES_HOST'),
-    'port': os.getenv('POSTGRES_PORT')
+    'dbname': os.getenv('POSTGRES_DB', 'pitch_decks'),
+    'user': os.getenv('POSTGRES_USER', 'postgres'),
+    'password': os.getenv('POSTGRES_PASSWORD', 'password'),
+    'host': os.getenv('POSTGRES_HOST', 'db'),
+    'port': os.getenv('POSTGRES_PORT', '5432')
 }
 
-# Initialize sentiment analyzer
 sia = SentimentIntensityAnalyzer()
-
 print("Starting worker")
 
 class PitchDeckParser:
@@ -69,12 +66,10 @@ class PitchDeckParser:
             'word_count': len(text.split()),
             'char_count': len(text)
         }
-
         sentiment = sia.polarity_scores(text)
         info['sentiment_score'] = sentiment['compound']
         info['sentiment_type'] = 'Positive' if sentiment['compound'] > 0.05 else \
             'Negative' if sentiment['compound'] < -0.05 else 'Neutral'
-
         lines = text.lower().split('\n')
         for line in lines:
             if 'problem' in line:
@@ -83,7 +78,6 @@ class PitchDeckParser:
                 info['solution'] = line.strip()
             elif 'market' in line:
                 info['market'] = line.strip()
-
         return info
 
     def store_data(self, filename, content, slide_count, analysis):
@@ -116,8 +110,6 @@ class PitchDeckParser:
             conn.commit()
             cur.close()
             conn.close()
-
-            # Clear cache after new data
             redis_client.delete('dashboard_data')
             return deck_id
         except Error as e:
@@ -135,23 +127,15 @@ def process_queue():
                 job = json.loads(job_json)
                 file_path = job['file_path']
                 filename = job['filename']
-
-                # Process file
                 print(f"Processing file: {filename}")
                 if filename.endswith('.pdf'):
                     content, slide_count = parser.parse_pdf(file_path)
                 else:
                     content, slide_count = parser.parse_pptx(file_path)
-
-                # Analyze content
                 print("Analyzing content")
                 analysis = parser.analyze_content(content)
-
-                # Store in database
                 print("Storing data in database")
                 parser.store_data(filename, content, slide_count, analysis)
-
-                # Clean up
                 print("Cleaning up temporary file")
                 if os.path.exists(file_path):
                     os.remove(file_path)

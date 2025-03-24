@@ -1,108 +1,128 @@
-import unittest
+import pytest
 import os
-import redis
+from app.app import app, PitchDeckParser, init_db
+from werkzeug.datastructures import FileStorage
 import psycopg2
+import redis
+import json
 from datetime import datetime
-from unittest.mock import patch, MagicMock
-from app.worker import PitchDeckParser, DB_CONFIG
-import PyPDF2
-import pptx
+import io
 
-class TestPitchDeckParser(unittest.TestCase):
-    def setUp(self):
-        self.parser = PitchDeckParser()
-        # Create a temporary file for testing
-        self.test_pdf_path = "test.pdf"
-        self.test_pptx_path = "test.pptx"
-        # Mock Redis client
-        self.redis_client = MagicMock(spec=redis.Redis)
-        # Mock database connection
-        self.conn = MagicMock()
-        self.cur = MagicMock()
-        self.conn.cursor.return_value = self.cur
+@pytest.fixture
+def client():
+    app.config['TESTING'] = True
+    app.config['UPLOAD_FOLDER'] = 'test_uploads'
+    os.makedirs('test_uploads', exist_ok=True)
+    init_db()
 
-    def tearDown(self):
-        # Clean up temporary files if they exist
-        if os.path.exists(self.test_pdf_path):
-            os.remove(self.test_pdf_path)
-        if os.path.exists(self.test_pptx_path):
-            os.remove(self.test_pptx_path)
+    with app.test_client() as client:
+        yield client
 
-    @patch('PyPDF2.PdfReader')
-    def test_parse_pdf(self, mock_pdf_reader):
-        # Mock PDF reader
-        mock_pdf = MagicMock()
-        mock_page = MagicMock()
-        mock_page.extract_text.return_value = "Sample PDF content"
-        mock_pdf.pages = [mock_page]
-        mock_pdf_reader.return_value = mock_pdf
+    if os.path.exists('test_uploads'):
+        for file in os.listdir('test_uploads'):
+            os.remove(os.path.join('test_uploads', file))
+        os.rmdir('test_uploads')
 
-        # Create a dummy PDF file
-        with open(self.test_pdf_path, 'wb') as f:
-            f.write(b"Dummy PDF content")
+@pytest.fixture
+def redis_client():
+    return redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 
-        content, slide_count = self.parser.parse_pdf(self.test_pdf_path)
-        self.assertEqual(content, "Sample PDF content\n")
-        self.assertEqual(slide_count, 1)
+@pytest.fixture
+def db_connection():
+    conn = psycopg2.connect(**app.DB_CONFIG)
+    yield conn
+    conn.close()
 
-    @patch('pptx.Presentation')
-    def test_parse_pptx(self, mock_presentation):
-        # Mock PPTX presentation
-        mock_prs = MagicMock()
-        mock_slide = MagicMock()
-        mock_shape = MagicMock()
-        mock_shape.text = "Sample PPTX content"
-        mock_shape.has_text = True
-        mock_slide.shapes = [mock_shape]
-        mock_prs.slides = [mock_slide]
-        mock_presentation.return_value = mock_prs
+def create_test_file(filename, content, mode='w'):
+    with open(filename, mode) as f:
+        f.write(content)
+    return open(filename, 'rb')
 
-        # Create a dummy PPTX file
-        with open(self.test_pptx_path, 'wb') as f:
-            f.write(b"Dummy PPTX content")
+def test_upload_valid_pdf(client, redis_client, capsys):
+    pdf_file = FileStorage(
+        stream=create_test_file('test_uploads/test.pdf', "Test PDF\nPage 2"),
+        filename='test.pdf',
+        content_type='application/pdf'
+    )
+    response = client.post('/api/upload', data={'file': pdf_file})
+    captured = capsys.readouterr()
 
-        content, slide_count = self.parser.parse_pptx(self.test_pptx_path)
-        self.assertEqual(content, "Sample PPTX content\n")
-        self.assertEqual(slide_count, 1)
+    assert response.status_code == 202
+    assert b'File queued for processing' in response.data
+    assert "Queued file for processing: test.pdf" in captured.out
 
-    def test_analyze_content(self):
-        text = "This is a positive problem and solution for the market."
-        analysis = self.parser.analyze_content(text)
+    queue_item = redis_client.lpop('processing_queue')
+    assert queue_item is not None
+    job = json.loads(queue_item)
+    assert job['filename'] == 'test.pdf'
 
-        self.assertIn('upload_date', analysis)
-        self.assertEqual(analysis['word_count'], 9)
-        self.assertEqual(analysis['char_count'], 48)
-        self.assertGreater(analysis['sentiment_score'], 0.05)  # Should be positive
-        self.assertEqual(analysis['sentiment_type'], 'Positive')
-        self.assertEqual(analysis['problem'], "this is a positive problem and solution for the market.")
-        self.assertEqual(analysis['solution'], "this is a positive problem and solution for the market.")
-        self.assertEqual(analysis['market'], "this is a positive problem and solution for the market.")
+def test_upload_no_file(client):
+    response = client.post('/api/upload')
+    assert response.status_code == 400
+    assert b'No file provided' in response.data
 
-    @patch('psycopg2.connect')
-    @patch('app.worker.redis_client', new_callable=MagicMock)
-    def test_store_data(self, mock_redis_client, mock_connect):
-        # Mock database connection
-        mock_connect.return_value = self.conn
-        self.cur.fetchone.return_value = [1]  # Mock deck_id
+def test_upload_empty_file(client, capsys):
+    empty_file = FileStorage(
+        stream=io.BytesIO(b""),
+        filename='empty.pdf',
+        content_type='application/pdf'
+    )
+    response = client.post('/api/upload', data={'file': empty_file})
+    captured = capsys.readouterr()
+    assert response.status_code == 202
+    assert "Queued file for processing: empty.pdf" in captured.out
 
-        filename = "test.pdf"
-        content = "Sample content"
-        slide_count = 2
-        analysis = {
-            'upload_date': "2025-03-24 15:00:00",
-            'word_count': 2,
-            'char_count': 13,
-            'sentiment_score': 0.5,
-            'sentiment_type': 'Positive',
-            'problem': 'problem statement',
-            'solution': 'solution statement',
-            'market': 'market statement'
-        }
+def test_upload_unsupported_format(client):
+    txt_file = FileStorage(
+        stream=create_test_file('test_uploads/test.txt', "Text content"),
+        filename='test.txt',
+        content_type='text/plain'
+    )
+    response = client.post('/api/upload', data={'file': txt_file})
+    assert response.status_code == 400
+    assert b'Unsupported file format' in response.data
 
-        deck_id = self.parser.store_data(filename, content, slide_count, analysis)
-        self.assertEqual(deck_id, 1)
-        self.cur.execute.assert_called_once()
-        mock_redis_client.delete.assert_called_once_with('dashboard_data')
+def test_upload_large_file(client):
+    large_content = b"A" * (app.config['MAX_CONTENT_LENGTH'] + 1)
+    large_file = FileStorage(
+        stream=io.BytesIO(large_content),
+        filename='large.pdf',
+        content_type='application/pdf'
+    )
+    response = client.post('/api/upload', data={'file': large_file})
+    assert response.status_code == 413
+
+def test_dashboard_display(client, db_connection, redis_client, capsys):
+    cur = db_connection.cursor()
+    cur.execute("""
+        INSERT INTO pitch_decks (filename, upload_date, content, slide_count, status)
+        VALUES (%s, %s, %s, %s, %s)
+    """, ('test.pdf', datetime.now(), 'Test content', 2, 'processed'))
+    db_connection.commit()
+
+    redis_client.flushdb()
+    response = client.get('/')
+    captured = capsys.readouterr()
+    assert response.status_code == 200
+    assert b'test.pdf' in response.data
+    assert "Cached new dashboard data" in captured.out
+
+def test_parser_pdf_error_handling(capsys):
+    parser = PitchDeckParser()
+    with pytest.raises(Exception):
+        parser.parse_pdf('nonexistent.pdf')
+    captured = capsys.readouterr()
+    assert "PDF parsing error" in captured.out
+
+def test_database_connection_error(monkeypatch, capsys):
+    parser = PitchDeckParser()
+    def mock_connect(*args, **kwargs):
+        raise psycopg2.Error("Connection failed")
+    monkeypatch.setattr(psycopg2, 'connect', mock_connect)
+    with pytest.raises(Exception):
+        parser.store_data('test.pdf', 'content', 1, {'word_count': 1, 'char_count': 1, 'sentiment_score': 0, 'sentiment_type': 'Neutral'})
+    captured = capsys.readouterr()
+    assert "Database storage error" in captured.out
 
 if __name__ == '__main__':
-    unittest.main()
+    pytest.main(['-v'])

@@ -1,69 +1,54 @@
+version: '3.8'
+
 services:
   api:
-    image: ${DOCKER_HUB_REPO}:latest
-    command: python app/app.py
+    build: .
     ports:
       - "5000:5000"
     volumes:
       - ./uploads:/app/uploads
-    env_file:
-      - .env
-    environment:
-      - FLASK_ENV=${FLASK_ENV}
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - app-network
+      - db
+      - redis
+    environment:
+      - POSTGRES_DB=pitch_decks
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
 
   worker:
-    image: ${DOCKER_HUB_REPO}:latest
+    build: .
     command: python app/worker.py
     volumes:
       - ./uploads:/app/uploads
-    env_file:
-      - .env
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - app-network
+      - db
+      - redis
+    environment:
+      - POSTGRES_DB=pitch_decks
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
 
   db:
     image: postgres:13
     environment:
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=pitch_decks
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
     volumes:
       - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - app-network
 
   redis:
     image: redis:6
     ports:
       - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - app-network
 
 volumes:
   pgdata:
-
-networks:
-  app-network:
-    driver: bridge

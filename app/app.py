@@ -9,7 +9,9 @@ import redis
 import json
 from nltk.sentiment import SentimentIntensityAnalyzer
 import nltk
-from app.routes import init_routes
+nltk.download('vader_lexicon')  # Added here to ensure it's downloaded
+
+from .routes import init_routes
 
 app = Flask(__name__)
 
@@ -19,14 +21,13 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 
 DB_CONFIG = {
-    'dbname': os.getenv('POSTGRES_DB'),
-    'user': os.getenv('POSTGRES_USER'),
-    'password': os.getenv('POSTGRES_PASSWORD'),
-    'host': os.getenv('POSTGRES_HOST'),
-    'port': os.getenv('POSTGRES_PORT')
+    'dbname': os.getenv('POSTGRES_DB', 'pitch_decks'),
+    'user': os.getenv('POSTGRES_USER', 'postgres'),
+    'password': os.getenv('POSTGRES_PASSWORD', 'password'),
+    'host': os.getenv('POSTGRES_HOST', 'db'),
+    'port': os.getenv('POSTGRES_PORT', '5432')
 }
 
-# Redis configuration
 try:
     redis_client = redis.Redis(
         host=os.getenv('REDIS_HOST', 'redis'),
@@ -34,13 +35,12 @@ try:
         db=0,
         decode_responses=True
     )
-    redis_client.ping()  # Test the connection
+    redis_client.ping()
     print("Successfully connected to Redis")
 except redis.ConnectionError as e:
     print(f"Failed to connect to Redis: {e}")
     raise
 
-# Initialize sentiment analyzer
 sia = SentimentIntensityAnalyzer()
 
 print("Starting Flask application")
@@ -107,14 +107,10 @@ class PitchDeckParser:
             'word_count': len(text.split()),
             'char_count': len(text)
         }
-
-        # Sentiment analysis
         sentiment = sia.polarity_scores(text)
         info['sentiment_score'] = sentiment['compound']
         info['sentiment_type'] = 'Positive' if sentiment['compound'] > 0.05 else \
             'Negative' if sentiment['compound'] < -0.05 else 'Neutral'
-
-        # Extract potential key sections
         lines = text.lower().split('\n')
         for line in lines:
             if 'problem' in line:
@@ -123,7 +119,6 @@ class PitchDeckParser:
                 info['solution'] = line.strip()
             elif 'market' in line:
                 info['market'] = line.strip()
-
         return info
 
     def store_data(self, filename, content, slide_count, analysis):
@@ -156,8 +151,6 @@ class PitchDeckParser:
             conn.commit()
             cur.close()
             conn.close()
-
-            # Clear cache after new data
             redis_client.delete('dashboard_data')
             return deck_id
         except Error as e:
@@ -165,8 +158,6 @@ class PitchDeckParser:
             raise
 
 parser = PitchDeckParser()
-
-# Initialize routes
 init_routes(app, redis_client, parser, DB_CONFIG)
 
 if __name__ == '__main__':

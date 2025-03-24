@@ -23,6 +23,7 @@ COPY . .
 
 RUN useradd -m appuser
 USER appuser
+RUN python -c "import nltk; nltk.download('vader_lexicon')"
 
 EXPOSE 5000
 
