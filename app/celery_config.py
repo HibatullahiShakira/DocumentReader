@@ -1,9 +1,7 @@
 from celery import Celery
 
-# Create the Celery instance at the module level, but don't initialize it yet
 celery = Celery('app')
 
-# Function to initialize the Celery instance with the Flask app configuration
 def init_celery(app):
     celery.conf.update(
         broker_url=app.config['BROKER_URL'],

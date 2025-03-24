@@ -11,7 +11,6 @@ db = SQLAlchemy()
 
 from app.celery_config import celery, init_celery
 
-
 def create_app():
     print("Starting create_app()", flush=True)
     app = Flask(__name__, template_folder=os.path.abspath(os.path.join(os.path.dirname(__file__), 'templates')))
@@ -24,30 +23,25 @@ def create_app():
         print("Loading ProductionConfig", flush=True)
         app.config.from_object('app.config.ProductionConfig')
 
-    # Debug: Print SQLALCHEMY_DATABASE_URI
     print("SQLALCHEMY_DATABASE_URI:", app.config.get('SQLALCHEMY_DATABASE_URI'), flush=True)
 
-    # Ensure upload folder exists
     upload_folder = app.config.get('UPLOAD_FOLDER', 'uploads')
     if not os.path.exists(upload_folder):
         os.makedirs(upload_folder)
         print(f"Upload folder created at: {upload_folder}", flush=True)
 
-    # Initialize extensions
     print("Initializing SQLAlchemy", flush=True)
     db.init_app(app)
 
-    # Test database connection
     print("Testing database connection", flush=True)
     with app.app_context():
         try:
-            db.session.execute(text('SELECT 1'))  # Wrap the query in text()
+            db.session.execute(text('SELECT 1'))
             print("Successfully connected to the database", flush=True)
         except Exception as e:
             print(f"Failed to connect to the database: {e}", flush=True)
             raise e
 
-    # Test Redis connection
     print("Testing Redis connection", flush=True)
     try:
         r = redis.Redis.from_url(app.config['REDIS_URL'])
@@ -57,18 +51,15 @@ def create_app():
         print(f"Failed to connect to Redis: {e}", flush=True)
         raise e
 
-    # Initialize Celery
     print("Initializing Celery", flush=True)
     init_celery(app)
 
     print(f"Upload folder created at: {upload_folder}", flush=True)
     print("Routes blueprint registered", flush=True)
 
-    # Import models before creating tables
     print("Importing models", flush=True)
     from app.models import File, Slide
 
-    # Create database tables
     print("Creating database tables", flush=True)
     with app.app_context():
         try:
@@ -78,7 +69,6 @@ def create_app():
             print(f"Failed to create database tables: {e}", flush=True)
             raise e
 
-    # Register blueprints after everything is initialized
     print("Registering blueprints", flush=True)
     from app.routes import main as main_blueprint
     app.register_blueprint(main_blueprint)
