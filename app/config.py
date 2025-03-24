@@ -29,9 +29,8 @@ class DevelopmentConfig(Config):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = os.environ.get('SQLALCHEMY_DATABASE_URI')
     REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
-    # Celery settings
-    broker_url = os.environ.get('broker_url', 'amqp://guest:guest@rabbitmq:5672//')
-    result_backend = os.environ.get('result_backend', 'redis://redis:6379/0')
+    BROKER_URL = os.environ.get('broker_url', 'amqp://guest:guest@rabbitmq:5672//')
+    RESULT_BACKEND = os.environ.get('result_backend', 'redis://redis:6379/0')
 
 
 class ProductionConfig(Config):

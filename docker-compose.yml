@@ -33,20 +33,14 @@ services:
     environment:
       - FLASK_ENV=${FLASK_ENV}
       - SQLALCHEMY_DATABASE_URI=${SQLALCHEMY_DATABASE_URI}
-      - broker_url=${broker_url}
-      - result_backend=${result_backend}
+      - BROKER_URL=${broker_url}
+      - RESULT_BACKEND=${result_backend}
       - REDIS_URL=${REDIS_URL}
-    user: appuser
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      web:
-        condition: service_started
+      - rabbitmq
+      - redis
     networks:
       - app-network
-
   db:
     image: postgres:15
     volumes:
@@ -83,7 +77,7 @@ services:
       - "5672:5672"
       - "15672:15672"
     healthcheck:
-      test: ["CMD", "rabbitmqctl", "status"]
+      test: ["CMD", "rabbitmqctl", "await", "--timeout=60", "5672"]
       interval: 10s
       timeout: 5s
       retries: 5
