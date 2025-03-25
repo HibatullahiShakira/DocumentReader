@@ -15,9 +15,10 @@ from app.config import get_config
 
 
 def create_app():
-    app = Flask(__name__, template_folder='template')
+    app = Flask(__name__, static_folder='/app/app/static')
 
-    # Load configuration
+    print(f"Static folder path: {app.static_folder}")
+
     config = get_config()
     app.config.from_object(config)
 
