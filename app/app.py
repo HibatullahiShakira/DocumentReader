@@ -4,6 +4,7 @@ import redis
 import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 from dotenv import load_dotenv
+
 nltk.download('vader_lexicon')
 
 load_dotenv()
@@ -12,8 +13,9 @@ from app.routes import init_routes
 from app.models import PitchDeckParser, db
 from app.config import get_config
 
+
 def create_app():
-    app = Flask(__name__)
+    app = Flask(__name__, template_folder='template')
 
     # Load configuration
     config = get_config()
