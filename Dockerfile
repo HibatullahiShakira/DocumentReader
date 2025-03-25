@@ -4,6 +4,12 @@ FROM python:3.12
 # Set the working directory
 WORKDIR /app
 
+# Install system dependencies for PostgreSQL and compilation
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy requirements first to leverage Docker caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt -v || { echo "pip install failed"; exit 1; }
@@ -17,12 +23,14 @@ COPY app/* .
 # Copy the run.py file
 COPY run.py .
 
+# Create a non-root user
+RUN useradd -m appuser
+
 # Create the uploads directory (needed for runtime, will be mounted via volume)
 RUN mkdir -p uploads
 RUN chown -R appuser:appuser uploads
 
-# Create a non-root user and switch to it
-RUN useradd -m appuser
+# Switch to the non-root user
 USER appuser
 
 # Ensure NLTK data is available for the non-root user
