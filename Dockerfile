@@ -17,8 +17,8 @@ RUN pip install --no-cache-dir -r requirements.txt -v || { echo "pip install fai
 # Download NLTK data
 RUN python -m nltk.downloader vader_lexicon || { echo "NLTK download failed"; exit 1; }
 
-# Copy the application code (only the app/ directory contents)
-COPY app/* .
+# Copy the entire app directory (preserving the directory structure)
+COPY app/ app/
 
 # Copy the run.py file
 COPY run.py .

@@ -1,6 +1,7 @@
 # app/config.py
 import os
 
+
 class Config:
     # Flask settings
     SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key')
@@ -19,17 +20,21 @@ class Config:
     REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
     REDIS_DB = 0
 
+
 class DevelopmentConfig(Config):
     DEBUG = True
 
+
 class ProductionConfig(Config):
     DEBUG = False
+
 
 # Select the config based on FLASK_ENV
 config_map = {
     'development': DevelopmentConfig,
     'production': ProductionConfig
 }
+
 
 def get_config():
     env = os.getenv('FLASK_ENV', 'development')

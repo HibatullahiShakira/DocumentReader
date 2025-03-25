@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 from app.models import PitchDeck
 
+
 def init_routes(app, redis_client, parser):
     @app.route('/')
     def dashboard():
@@ -69,6 +70,7 @@ def init_routes(app, redis_client, parser):
         except Exception as e:
             print(f"Upload error: {e}")
             return jsonify({'error': str(e)}), 500
+
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'pdf', 'pptx'}
