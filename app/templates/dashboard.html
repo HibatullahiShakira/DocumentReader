@@ -1,20 +1,70 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Pitch Deck Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pitch Deck Analysis Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        form {
+            margin-bottom: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+            color: #333;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
 </head>
 <body>
 <h1>Pitch Deck Analysis Dashboard</h1>
-
-<div class="upload-section">
-    <form id="uploadForm" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".pdf,.pptx" required>
-        <button type="submit">Upload Pitch Deck</button>
-    </form>
-</div>
-
+<form id="uploadForm" action="/api/upload" method="post" enctype="multipart/form-data">
+    <label for="file">Choose File</label>
+    <input type="file" id="file" name="file" accept=".pdf,.pptx">
+    <button type="submit">Upload Pitch Deck</button>
+</form>
 <table>
+    <thead>
     <tr>
         <th>ID</th>
         <th>Filename</th>
@@ -27,22 +77,39 @@
         <th>Market</th>
         <th>Status</th>
     </tr>
-    {% for item in data %}
+    </thead>
+    <tbody>
+    {% if pitch_decks %}
+    {% for deck in pitch_decks %}
     <tr>
-        <td>{{ item[0] }}</td>
-        <td>{{ item[1] }}</td>
-        <td>{{ item[2] }}</td>
-        <td>{{ item[4] }}</td>
-        <td>{{ item[6] }}</td>
-        <td>{{ item[9] }} ({{ item[8]|round(2) }})</td>
-        <td>{{ item[10]|default('Not found') }}</td>
-        <td>{{ item[11]|default('Not found') }}</td>
-        <td>{{ item[12]|default('Not found') }}</td>
-        <td>{{ item[5] }}</td>
+        <td>{{ deck.id }}</td>
+        <td>{{ deck.filename }}</td>
+        <td>{{ deck.upload_date }}</td>
+        <td>{{ deck.slide_count }}</td>
+        <td>{{ deck.word_count }}</td>
+        <td>{{ deck.sentiment }}</td>
+        <td>{{ deck.problem }}</td>
+        <td>{{ deck.solution }}</td>
+        <td>{{ deck.market }}</td>
+        <td>{{ deck.status }}</td>
     </tr>
     {% endfor %}
+    {% else %}
+    <tr>
+        <td colspan="10">No pitch decks found. Please upload a file to analyze.</td>
+    </tr>
+    {% endif %}
+    </tbody>
 </table>
 
-<script src="{{ url_for('static', filename='js/script.js') }}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log("Script loaded");
+
+        document.getElementById('uploadForm').addEventListener('submit', function(event) {
+            console.log('Form submitted');
+        });
+    });
+</script>
 </body>
 </html>
