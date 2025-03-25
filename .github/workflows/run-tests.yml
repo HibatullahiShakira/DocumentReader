@@ -1,17 +1,5 @@
 name: Run Tests for DocumentReader
 
-env:
-  DOCKER_HUB_REPO: ashakun/documentreader
-  FLASK_ENV: testing
-  POSTGRES_USER: shakira
-  POSTGRES_PASSWORD: password
-  POSTGRES_DB: documentreader_test
-  POSTGRES_HOST: localhost
-  POSTGRES_PORT: 5432
-  REDIS_HOST: localhost
-  REDIS_PORT: 6379
-  REDIS_DB: 1
-
 on:
   push:
     branches: ['main']
@@ -30,13 +18,13 @@ jobs:
       db:
         image: postgres:13
         env:
-          POSTGRES_USER: ${{ env.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_USER: shakira
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: documentreader_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U ${{ env.POSTGRES_USER }} -d ${{ env.POSTGRES_DB }}"
+          --health-cmd "pg_isready -U shakira -d documentreader_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
@@ -57,14 +45,14 @@ jobs:
 
       - name: Run tests
         env:
-          FLASK_ENV: ${{ env.FLASK_ENV }}
-          POSTGRES_USER: ${{ env.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ env.POSTGRES_DB }}
-          POSTGRES_HOST: ${{ env.POSTGRES_HOST }}
-          POSTGRES_PORT: ${{ env.POSTGRES_PORT }}
-          REDIS_HOST: ${{ env.REDIS_HOST }}
-          REDIS_PORT: ${{ env.REDIS_PORT }}
-          REDIS_DB: ${{ env.REDIS_DB }}
+          FLASK_ENV: testing
+          POSTGRES_USER: shakira
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: documentreader_test
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_DB: 1
         run: |
-          pytest tests/test_functionalities.py -v
+          pytest tests/test_app.py -v
