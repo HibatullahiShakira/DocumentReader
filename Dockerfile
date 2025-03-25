@@ -23,13 +23,13 @@ COPY app/* .
 # Copy the run.py file
 COPY run.py .
 
-# Create a non-root user and switch to it
-RUN useradd -m appuser
-USER appuser
-
 # Create the uploads directory (needed for runtime, will be mounted via volume)
 RUN mkdir -p uploads
 RUN chown -R appuser:appuser uploads
+
+# Create a non-root user and switch to it
+RUN useradd -m appuser
+USER appuser
 
 # Ensure NLTK data is available for the non-root user
 RUN python -c "import nltk; nltk.download('vader_lexicon')"
