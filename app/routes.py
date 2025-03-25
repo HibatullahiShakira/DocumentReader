@@ -1,14 +1,13 @@
+# app/routes.py
 import os
-
 from flask import render_template, request, jsonify
 import redis
 import json
-import psycopg2
-from psycopg2 import Error
 from werkzeug.utils import secure_filename
 from datetime import datetime
+from app.models import PitchDeck
 
-def init_routes(app, redis_client, parser, DB_CONFIG):
+def init_routes(app, redis_client, parser):
     @app.route('/')
     def dashboard():
         try:
@@ -17,16 +16,26 @@ def init_routes(app, redis_client, parser, DB_CONFIG):
                 print("Serving dashboard from cache")
                 data = json.loads(cached_data)
             else:
-                conn = psycopg2.connect(**DB_CONFIG)
-                cur = conn.cursor()
-                cur.execute("SELECT * FROM pitch_decks ORDER BY upload_date DESC")
-                data = cur.fetchall()
-                cur.close()
-                conn.close()
+                pitch_decks = PitchDeck.query.order_by(PitchDeck.upload_date.desc()).all()
+                data = [{
+                    'id': pd.id,
+                    'filename': pd.filename,
+                    'upload_date': pd.upload_date.isoformat(),
+                    'content': pd.content,
+                    'slide_count': pd.slide_count,
+                    'status': pd.status,
+                    'word_count': pd.word_count,
+                    'char_count': pd.char_count,
+                    'sentiment_score': pd.sentiment_score,
+                    'sentiment_type': pd.sentiment_type,
+                    'problem': pd.problem,
+                    'solution': pd.solution,
+                    'market': pd.market
+                } for pd in pitch_decks]
                 redis_client.setex('dashboard_data', 300, json.dumps(data))
                 print("Cached new dashboard data")
             return render_template('dashboard.html', data=data)
-        except Error as e:
+        except Exception as e:
             print(f"Dashboard data fetch error: {e}")
             return jsonify({'error': 'Internal server error'}), 500
 
