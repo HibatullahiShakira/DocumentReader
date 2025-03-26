@@ -1,11 +1,11 @@
-# app/models.py
-import PyPDF2
+import pypdf
 import pptx
 from datetime import datetime
 from nltk.sentiment import SentimentIntensityAnalyzer
 from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
+
 
 class PitchDeckParser:
     def __init__(self, sia=None):
@@ -14,7 +14,7 @@ class PitchDeckParser:
     def parse_pdf(self, file_path):
         try:
             with open(file_path, 'rb') as file:
-                pdf_reader = PyPDF2.PdfReader(file)
+                pdf_reader = pypdf.PdfReader(file)
                 content = ""
                 for page in pdf_reader.pages:
                     content += page.extract_text() + "\n"
@@ -55,6 +55,7 @@ class PitchDeckParser:
             elif 'market' in line:
                 info['market'] = line.strip()
         return info
+
 
 class PitchDeck(db.Model):
     __tablename__ = 'pitch_decks'

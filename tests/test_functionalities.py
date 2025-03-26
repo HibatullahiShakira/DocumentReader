@@ -1,4 +1,3 @@
-# tests/test_functionalities.py
 import unittest
 import os
 import redis
@@ -28,7 +27,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
 
         try:
             self.redis_client = redis.Redis(
-                host='localhost',
+                host='redis',
                 port=6379,
                 db=1,
                 decode_responses=True
@@ -36,11 +35,14 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             self.redis_client.ping()
         except redis.ConnectionError as e:
             self.fail(f"Failed to connect to Redis: {e}")
+        # Clear the Redis queue and cache
         self.redis_client.flushdb()
 
-        self.test_pdf_path = os.path.join(self.app.config['UPLOAD_FOLDER'], "test.pdf")
-        with open(self.test_pdf_path, "wb") as f:
-            f.write(b"%PDF-1.4\n% Test PDF content\n")
+        self.test_pdf_path = os.path.join(self.app.config['UPLOAD_FOLDER'], "Data Engineer.pdf")
+        print(f"Looking for Data Engineer.pdf at: {self.test_pdf_path}")
+        if not os.path.exists(self.test_pdf_path):
+            self.fail(
+                f"Test PDF file not found at {self.test_pdf_path}.")
 
         self.test_pptx_path = os.path.join(self.app.config['UPLOAD_FOLDER'], "test.pptx")
         with open(self.test_pptx_path, "wb") as f:
@@ -55,18 +57,19 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         self.redis_client.flushdb()
         if os.path.exists(self.app.config['UPLOAD_FOLDER']):
             for file in os.listdir(self.app.config['UPLOAD_FOLDER']):
-                file_path = os.path.join(self.app.config['UPLOAD_FOLDER'], file)
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-            os.rmdir(self.app.config['UPLOAD_FOLDER'])
+                if file != "Data Engineer.pdf":  # Don't delete the test PDF
+                    file_path = os.path.join(self.app.config['UPLOAD_FOLDER'], file)
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
 
     def test_upload_endpoint_no_file(self):
         response = self.client.post('/api/upload')
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json, {'error': 'No file provided'})
 
+        # Verify no pitch deck is saved to the database
         with self.app.app_context():
-            pitch_deck = PitchDeck.query.filter_by(filename="test.pdf").first()
+            pitch_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
             self.assertIsNone(pitch_deck, "A pitch deck was unexpectedly saved to the database")
 
     def test_upload_endpoint_invalid_file(self):
@@ -91,24 +94,24 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             response = self.client.post(
                 '/api/upload',
                 content_type='multipart/form-data',
-                data={'file': (f, 'test.pdf')}
+                data={'file': (f, 'Data Engineer.pdf')}
             )
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.json, {
             'message': 'File queued for processing',
-            'filename': 'test.pdf'
+            'filename': 'Data Engineer.pdf'
         })
 
         job = self.redis_client.lpop("processing_queue")
         self.assertIsNotNone(job, "No job was added to the queue")
         job_data = json.loads(job)
-        self.assertEqual(job_data["filename"], "test.pdf", "Job filename mismatch")
-        self.assertEqual(job_data["file_path"], os.path.join(self.app.config['UPLOAD_FOLDER'], "test.pdf"))
+        self.assertEqual(job_data["filename"], "Data Engineer.pdf", "Job filename mismatch")
+        self.assertEqual(job_data["file_path"], os.path.join(self.app.config['UPLOAD_FOLDER'], "Data Engineer.pdf"))
 
-        self.assertTrue(os.path.exists(self.test_pdf_path), f"File was not saved to {self.test_pdf_path}")
+        self.assertTrue(os.path.exists(self.test_pdf_path), f"File was not found at {self.test_pdf_path}")
 
         with self.app.app_context():
-            pitch_deck = PitchDeck.query.filter_by(filename="test.pdf").first()
+            pitch_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
             self.assertIsNone(pitch_deck, "A pitch deck was unexpectedly saved to the database")
 
     def test_upload_endpoint_valid_pptx_file(self):
@@ -135,7 +138,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
     def test_worker_processing_pdf(self):
         job = {
             'file_path': self.test_pdf_path,
-            'filename': 'test.pdf',
+            'filename': 'Data Engineer.pdf',
             'timestamp': '2023-01-01T00:00:00'
         }
         self.redis_client.lpush('processing_queue', json.dumps(job))
@@ -148,7 +151,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
 
         with self.app.app_context():
             pitch_deck = PitchDeck(
-                filename="test.pdf",
+                filename="Data Engineer.pdf",
                 content=content,
                 slide_count=slide_count,
                 analysis=analysis,
@@ -157,16 +160,19 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             pitch_deck.save(self.redis_client)
 
         with self.app.app_context():
-            pitch_deck = PitchDeck.query.filter_by(filename="test.pdf").first()
+            pitch_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
             self.assertIsNotNone(pitch_deck, "Pitch deck was not saved to the database")
-            self.assertEqual(pitch_deck.filename, "test.pdf")
-            self.assertEqual(pitch_deck.content, "Test PDF content\n")
-            self.assertEqual(pitch_deck.slide_count, 1)
-            self.assertEqual(pitch_deck.word_count, 3)
-            self.assertEqual(pitch_deck.char_count, 16)
+            self.assertEqual(pitch_deck.filename, "Data Engineer.pdf")
+            self.assertIn("Shakira Hibatullahi", pitch_deck.content)
+            self.assertIn("Aspiring Data Engineer Intern", pitch_deck.content)
+            self.assertIsInstance(pitch_deck.slide_count, int)
+            self.assertGreater(pitch_deck.slide_count, 0)
+            self.assertEqual(pitch_deck.word_count, len(content.split()))
+            self.assertEqual(pitch_deck.char_count, len(content))
             self.assertEqual(pitch_deck.status, "processed")
             self.assertIsInstance(pitch_deck.sentiment_score, float)
             self.assertIn(pitch_deck.sentiment_type, ['Positive', 'Negative', 'Neutral'])
+            self.assertIn("aspiring data engineer intern", pitch_deck.problem.lower())
 
         self.assertIsNone(self.redis_client.get('dashboard_data'), "Redis cache was not invalidated")
 
@@ -182,7 +188,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         }
         with self.app.app_context():
             pitch_deck = PitchDeck(
-                filename="test.pdf",
+                filename="Data Engineer.pdf",
                 content="Test content",
                 slide_count=5,
                 analysis=analysis,
@@ -190,9 +196,9 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             )
             pitch_deck.save(self.redis_client)
 
-            retrieved_deck = PitchDeck.query.filter_by(filename="test.pdf").first()
+            retrieved_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
             self.assertIsNotNone(retrieved_deck)
-            self.assertEqual(retrieved_deck.filename, "test.pdf")
+            self.assertEqual(retrieved_deck.filename, "Data Engineer.pdf")
             self.assertEqual(retrieved_deck.content, "Test content")
             self.assertEqual(retrieved_deck.slide_count, 5)
             self.assertEqual(retrieved_deck.word_count, 2)
@@ -216,7 +222,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         }
         with self.app.app_context():
             pitch_deck = PitchDeck(
-                filename="test.pdf",
+                filename="Data Engineer.pdf",
                 content="Initial content",
                 slide_count=3,
                 analysis=analysis,
@@ -245,7 +251,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             pitch_deck.market = updated_analysis['market']
             pitch_deck.save(self.redis_client)
 
-            updated_deck = PitchDeck.query.filter_by(filename="test.pdf").first()
+            updated_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
             self.assertIsNotNone(updated_deck)
             self.assertEqual(updated_deck.content, "Updated content")
             self.assertEqual(updated_deck.slide_count, 5)
@@ -270,7 +276,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         }
         with self.app.app_context():
             pitch_deck = PitchDeck(
-                filename="test.pdf",
+                filename="Data Engineer.pdf",
                 content="Test content",
                 slide_count=5,
                 analysis=analysis,
@@ -281,7 +287,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             db.session.delete(pitch_deck)
             db.session.commit()
 
-            deleted_deck = PitchDeck.query.filter_by(filename="test.pdf").first()
+            deleted_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
             self.assertIsNone(deleted_deck, "Pitch deck was not deleted from the database")
 
     def test_pitch_deck_parser_analyze_content(self):
@@ -289,8 +295,8 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         parser = PitchDeckParser(sia=sia)
 
         content = (
-            "Our problem is that people struggle to find affordable housing. "
-            "Our solution is a platform that connects renters with landlords directly. "
+            "Our problem is that people struggle to find affordable housing.\n"
+            "Our solution is a platform that connects renters with landlords directly.\n"
             "The market is the rental industry, valued at $100 billion."
         )
         analysis = parser.analyze_content(content)
@@ -320,7 +326,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             response = self.client.post(
                 '/api/upload',
                 content_type='multipart/form-data',
-                data={'file': (f, 'test.pdf')}
+                data={'file': (f, 'Data Engineer.pdf')}
             )
         self.assertEqual(response.status_code, 202)
 
@@ -343,12 +349,14 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             pitch_deck.save(self.redis_client)
 
         with self.app.app_context():
-            pitch_deck = PitchDeck.query.filter_by(filename="test.pdf").first()
+            pitch_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
             self.assertEqual(pitch_deck.status, "processed")
-            self.assertEqual(pitch_deck.content, "Test PDF content\n")
-            self.assertEqual(pitch_deck.slide_count, 1)
-            self.assertEqual(pitch_deck.word_count, 3)
-            self.assertEqual(pitch_deck.char_count, 16)
+            self.assertIn("Shakira Hibatullahi", pitch_deck.content)
+            self.assertIn("Aspiring Data Engineer Intern", pitch_deck.content)
+            self.assertIsInstance(pitch_deck.slide_count, int)
+            self.assertGreater(pitch_deck.slide_count, 0)
+            self.assertEqual(pitch_deck.word_count, len(content.split()))
+            self.assertEqual(pitch_deck.char_count, len(content))
 
 
 if __name__ == "__main__":
