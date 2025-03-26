@@ -55,4 +55,4 @@ jobs:
           REDIS_PORT: 6379
           REDIS_DB: 1
         run: |
-          pytest tests/test_app.py -v
+          pytest tests/test_functionalities.py -v
