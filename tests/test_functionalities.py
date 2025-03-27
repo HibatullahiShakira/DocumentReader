@@ -13,11 +13,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         self.app.config.from_object('app.config.TestingConfig')
         self.client = self.app.test_client()
 
-        try:
-            os.makedirs(self.app.config['UPLOAD_FOLDER'], exist_ok=True)
-        except Exception as e:
-            self.fail(f"Failed to create test uploads folder: {e}")
-
+        # Initialize the database
         with self.app.app_context():
             try:
                 db.drop_all()
@@ -25,11 +21,12 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             except Exception as e:
                 self.fail(f"Failed to initialize database: {e}")
 
+        # Connect to Redis using app config
         try:
             self.redis_client = redis.Redis(
-                host='redis',
-                port=6379,
-                db=1,
+                host=self.app.config['REDIS_HOST'],
+                port=self.app.config['REDIS_PORT'],
+                db=self.app.config['REDIS_DB'],
                 decode_responses=True
             )
             self.redis_client.ping()
@@ -41,8 +38,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         self.test_pdf_path = os.path.join(self.app.config['UPLOAD_FOLDER'], "Data Engineer.pdf")
         print(f"Looking for Data Engineer.pdf at: {self.test_pdf_path}")
         if not os.path.exists(self.test_pdf_path):
-            self.fail(
-                f"Test PDF file not found at {self.test_pdf_path}.")
+            self.fail(f"Test PDF file not found at {self.test_pdf_path}.")
 
         self.test_pptx_path = os.path.join(self.app.config['UPLOAD_FOLDER'], "test.pptx")
         with open(self.test_pptx_path, "wb") as f:
@@ -51,16 +47,13 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
     def tearDown(self):
         with self.app.app_context():
             try:
+                db.session.remove()
                 db.drop_all()
             except Exception as e:
                 print(f"Warning: Failed to drop database: {e}")
         self.redis_client.flushdb()
-        if os.path.exists(self.app.config['UPLOAD_FOLDER']):
-            for file in os.listdir(self.app.config['UPLOAD_FOLDER']):
-                if file != "Data Engineer.pdf":  # Don't delete the test PDF
-                    file_path = os.path.join(self.app.config['UPLOAD_FOLDER'], file)
-                    if os.path.isfile(file_path):
-                        os.remove(file_path)
+        if os.path.exists(self.test_pptx_path):
+            os.remove(self.test_pptx_path)
 
     def test_upload_endpoint_no_file(self):
         response = self.client.post('/api/upload')

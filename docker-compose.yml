@@ -74,4 +74,4 @@ services:
     volumes:
       - ./tests:/app/tests
       - ./test_uploads:/app/test_uploads
-    command: ["pytest", "/app/tests/test_functionalities.py", "-v"]
+    command: ["python", "-m", "unittest", "discover", "-s", "tests", "-v"]

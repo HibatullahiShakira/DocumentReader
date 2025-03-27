@@ -1,10 +1,12 @@
-name: Run Tests for DocumentReader
+name: Run Tests
 
 on:
   push:
-    branches: ['main']
+    branches:
+      - main
   pull_request:
-    branches: ['main']
+    branches:
+      - main
 
 jobs:
   test:
@@ -15,14 +17,14 @@ jobs:
         image: redis:latest
         ports:
           - 6379:6379
-      db:
+      postgres:
         image: postgres:13
         env:
           POSTGRES_USER: shakira
           POSTGRES_PASSWORD: password
           POSTGRES_DB: documentreader_test
         ports:
-          - 5432:5432
+          - 5433:5432
         options: >-
           --health-cmd "pg_isready -U shakira -d documentreader_test"
           --health-interval 5s
@@ -30,11 +32,11 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: Check out the repo
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -43,6 +45,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Check for Data Engineer.pdf
+        run: |
+          if [ ! -f test_uploads/Data\ Engineer.pdf ]; then
+            echo "Error: Data Engineer.pdf not found in test_uploads. Please commit the file to the repository."
+            exit 1
+          fi
+
+      - name: Verify PostgreSQL connection
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1;"
+        env:
+          PGPASSWORD: password
+
+      - name: Verify Redis connection
+        run: |
+          pip install redis
+          python -c "import redis; r = redis.Redis(host='localhost', port=6379, db=1); r.ping()"
+
       - name: Run tests
         env:
           FLASK_ENV: testing
@@ -50,9 +72,8 @@ jobs:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: documentreader_test
           POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
+          POSTGRES_PORT: 5433
           REDIS_HOST: localhost
           REDIS_PORT: 6379
           REDIS_DB: 1
-        run: |
-          pytest tests/test_functionalities.py -v
+        run: python -m unittest discover -s tests -v
