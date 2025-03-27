@@ -55,8 +55,10 @@ class PitchDeckParser:
             return 'pitch_deck'
 
         resume_keywords = ['objective', 'summary', 'profile', 'experience', 'education', 'skills', 'certifications']
-        if any(keyword in text_lower for keyword in resume_keywords):
-            return 'resume'
+        # Look for keywords in a section-like format (e.g., "skills:" or "Skills\n")
+        for keyword in resume_keywords:
+            if re.search(rf'^{keyword}\s*:|^\s*{keyword}\s*\n', text_lower, re.MULTILINE):
+                return 'resume'
 
         return 'generic'
 

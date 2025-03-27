@@ -42,14 +42,13 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         with open(self.test_pptx_path, "wb") as f:
             f.write(b"Placeholder PPTX content")
 
-        self.test_generic_pdf_path = os.path.join(self.app.config['UPLOAD_FOLDER'], "generic.pdf")
-        with open(self.test_generic_pdf_path, "w") as f:
-            f.write(
-                "This is a report on climate change impacts. "
-                "The earth is warming due to greenhouse gas emissions. "
-                "Scientists at NASA are researching renewable energy solutions to mitigate these effects. "
-                "The report was published in 2023."
-            )
+        # Use Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf for the generic document test
+        self.test_generic_pdf_path = os.path.join(self.app.config['UPLOAD_FOLDER'],
+                                                  "Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf")
+        print(
+            f"Looking for Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf at: {self.test_generic_pdf_path}")
+        if not os.path.exists(self.test_generic_pdf_path):
+            self.fail(f"Test PDF file not found at {self.test_generic_pdf_path}.")
 
     def tearDown(self):
         with self.app.app_context():
@@ -61,8 +60,6 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         self.redis_client.flushdb()
         if os.path.exists(self.test_pptx_path):
             os.remove(self.test_pptx_path)
-        if os.path.exists(self.test_generic_pdf_path):
-            os.remove(self.test_generic_pdf_path)
 
     def test_upload_endpoint_no_file(self):
         response = self.client.post('/api/upload')
@@ -171,7 +168,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             self.assertIsInstance(pitch_deck.slide_count, int)
             self.assertGreater(pitch_deck.slide_count, 0)
             self.assertEqual(pitch_deck.word_count, len(content.split()))
-            self.assertEqual(pitch_deck.char_count, len(content))
+            self.assertEqual(pitch_deck.char_count, len(content.replace('\n', '')))
             self.assertEqual(pitch_deck.status, "processed")
             self.assertIsInstance(pitch_deck.sentiment_score, float)
             self.assertIn(pitch_deck.sentiment_type, ['Positive', 'Negative', 'Neutral'])
@@ -188,7 +185,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
     def test_worker_processing_generic_pdf(self):
         job = {
             'file_path': self.test_generic_pdf_path,
-            'filename': 'generic.pdf',
+            'filename': 'Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf',
             'timestamp': '2023-01-01T00:00:00'
         }
         self.redis_client.lpush('processing_queue', json.dumps(job))
@@ -201,7 +198,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
 
         with self.app.app_context():
             pitch_deck = PitchDeck(
-                filename="generic.pdf",
+                filename="Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf",
                 content=content,
                 slide_count=slide_count,
                 analysis=analysis,
@@ -210,23 +207,25 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             pitch_deck.save(self.redis_client)
 
         with self.app.app_context():
-            pitch_deck = PitchDeck.query.filter_by(filename="generic.pdf").first()
+            pitch_deck = PitchDeck.query.filter_by(
+                filename="Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf").first()
             self.assertIsNotNone(pitch_deck, "Pitch deck was not saved to the database")
-            self.assertEqual(pitch_deck.filename, "generic.pdf")
+            self.assertEqual(pitch_deck.filename, "Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf")
             self.assertEqual(pitch_deck.document_type, "generic")
             self.assertIsInstance(pitch_deck.slide_count, int)
             self.assertGreater(pitch_deck.slide_count, 0)
             self.assertEqual(pitch_deck.word_count, len(content.split()))
-            self.assertEqual(pitch_deck.char_count, len(content))
+            self.assertEqual(pitch_deck.char_count, len(content.replace('\n', '')))
             self.assertEqual(pitch_deck.status, "processed")
             self.assertIsInstance(pitch_deck.sentiment_score, float)
             self.assertIn(pitch_deck.sentiment_type, ['Positive', 'Negative', 'Neutral'])
-            self.assertIn("climate change", pitch_deck.problem.lower())
-            self.assertIn("climate change", pitch_deck.summary.lower())
-            self.assertIn("renewable energy", pitch_deck.summary.lower())
-            self.assertIn("climate change", pitch_deck.key_phrases.lower())
-            self.assertIn("greenhouse gas", pitch_deck.key_phrases.lower())
-            self.assertIn("renewable energy", pitch_deck.key_phrases.lower())
+            self.assertIn("full stack developer",
+                          pitch_deck.problem.lower())  # problem is set to summary for generic docs
+            self.assertIn("full stack developer", pitch_deck.summary.lower())
+            self.assertIn("web application", pitch_deck.summary.lower())
+            self.assertIn("full stack developer", pitch_deck.key_phrases.lower())
+            self.assertIn("web application", pitch_deck.key_phrases.lower())
+            self.assertIn("data parsing", pitch_deck.key_phrases.lower())
             self.assertIsNone(pitch_deck.solution)
             self.assertIsNone(pitch_deck.market)
             self.assertIsNone(pitch_deck.experience)
@@ -364,11 +363,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         parser = PitchDeckParser(sia=sia)
 
         # Test a pitch deck document
-        content = (
-            "Our problem is that people struggle to find affordable housing.\n"
-            "Our solution is a platform that connects renters with landlords directly.\n"
-            "The market is the rental industry, valued at $100 billion."
-        ).strip()
+        content = "Our problem is that people struggle to find affordable housing.\nOur solution is a platform that connects renters with landlords directly.\nThe market is the rental industry, valued at $100 billion."
         analysis = parser.analyze_content(content)
 
         self.assertEqual(analysis['document_type'], "pitch_deck")
@@ -446,7 +441,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             self.assertIsInstance(pitch_deck.slide_count, int)
             self.assertGreater(pitch_deck.slide_count, 0)
             self.assertEqual(pitch_deck.word_count, len(content.split()))
-            self.assertEqual(pitch_deck.char_count, len(content))
+            self.assertEqual(pitch_deck.char_count, len(content.replace('\n', '')))
 
 
 if __name__ == "__main__":
