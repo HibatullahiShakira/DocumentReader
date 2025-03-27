@@ -1,8 +1,19 @@
-import pypdf
 import pptx
-from datetime import datetime
+import pypdf
 from nltk.sentiment import SentimentIntensityAnalyzer
+from nltk.tokenize import word_tokenize, sent_tokenize
+from nltk.corpus import stopwords
+from nltk.tag import pos_tag
+import nltk
+import re
+from collections import Counter
 from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime, UTC
+
+nltk.download('punkt')
+nltk.download('averaged_perceptron_tagger')
+nltk.download('stopwords')
+nltk.download('vader_lexicon')
 
 db = SQLAlchemy()
 
@@ -10,6 +21,7 @@ db = SQLAlchemy()
 class PitchDeckParser:
     def __init__(self, sia=None):
         self.sia = sia if sia else SentimentIntensityAnalyzer()
+        self.stop_words = set(stopwords.words('english'))
 
     def parse_pdf(self, file_path):
         try:
@@ -36,6 +48,78 @@ class PitchDeckParser:
             print(f"PPTX parsing error: {e}")
             raise
 
+    def detect_document_type(self, text):
+        text_lower = text.lower()
+        pitch_deck_keywords = ['problem is', 'solution is', 'market is', 'our problem', 'our solution']
+        if any(keyword in text_lower for keyword in pitch_deck_keywords):
+            return 'pitch_deck'
+
+        resume_keywords = ['objective', 'summary', 'profile', 'experience', 'education', 'skills', 'certifications']
+        if any(keyword in text_lower for keyword in resume_keywords):
+            return 'resume'
+
+        return 'generic'
+
+    def extract_section(self, lines, start_keyword, max_lines=2):
+        for i, line in enumerate(lines):
+            if start_keyword in line:
+                section_lines = [line.strip()]
+                for j in range(1, max_lines + 1):
+                    if i + j < len(lines) and lines[i + j].strip() and not lines[i + j].strip().startswith('●'):
+                        section_lines.append(lines[i + j].strip())
+                    else:
+                        break
+                return ' '.join(section_lines)
+        return None
+
+    def extract_key_phrases(self, text, top_n=5):
+        """
+        Extract key phrases from the text using frequency-based method with POS tagging.
+        Returns a list of the top N key phrases.
+        """
+        words = word_tokenize(text.lower())
+        words = [word for word in words if word.isalnum() and word not in self.stop_words]
+        tagged_words = pos_tag(words)
+        phrases = []
+        current_phrase = []
+        for word, tag in tagged_words:
+            if tag.startswith(('NN', 'JJ')):  # Nouns (NN) or adjectives (JJ)
+                current_phrase.append(word)
+            else:
+                if current_phrase:
+                    phrases.append(' '.join(current_phrase))
+                    current_phrase = []
+        if current_phrase:
+            phrases.append(' '.join(current_phrase))
+
+        phrase_counts = Counter(phrases)
+        key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1]
+        return key_phrases if key_phrases else ["No key phrases identified"]
+
+    def extract_summary(self, text, max_sentences=3):
+        """
+        Extract a summary of the content by selecting sentences with key phrases.
+        """
+        sentences = sent_tokenize(text.strip())
+        if not sentences:
+            return "No content to summarize."
+
+        key_phrases = self.extract_key_phrases(text, top_n=5)
+        if not key_phrases:
+            return ' '.join(sentences[:max_sentences]).strip()
+
+        sentence_scores = []
+        for sentence in sentences:
+            score = sum(1 for phrase in key_phrases if phrase.lower() in sentence.lower())
+            sentence_scores.append((sentence, score))
+
+        sentence_scores.sort(key=lambda x: x[1], reverse=True)
+        top_sentences = [sentence for sentence, score in sentence_scores[:max_sentences] if score > 0]
+        if not top_sentences:
+            top_sentences = sentences[:max_sentences]
+        top_sentences = sorted(top_sentences, key=lambda s: sentences.index(s))
+        return ' '.join(top_sentences).strip()
+
     def analyze_content(self, text):
         info = {
             'upload_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -46,14 +130,32 @@ class PitchDeckParser:
         info['sentiment_score'] = sentiment['compound']
         info['sentiment_type'] = 'Positive' if sentiment['compound'] > 0.05 else \
             'Negative' if sentiment['compound'] < -0.05 else 'Neutral'
+
+        doc_type = self.detect_document_type(text.lower())
+        info['document_type'] = doc_type
         lines = text.lower().split('\n')
-        for line in lines:
-            if 'problem' in line:
-                info['problem'] = line.strip()
-            elif 'solution' in line:
-                info['solution'] = line.strip()
-            elif 'market' in line:
-                info['market'] = line.strip()
+
+        if doc_type == 'pitch_deck':
+            for line in lines:
+                if 'problem' in line:
+                    info['problem'] = line.strip()
+                elif 'solution' in line:
+                    info['solution'] = line.strip()
+                elif 'market' in line:
+                    info['market'] = line.strip()
+        elif doc_type == 'resume':
+            info['problem'] = self.extract_section(lines, 'objective') or \
+                              self.extract_section(lines, 'summary') or \
+                              self.extract_section(lines, 'profile')
+            info['experience'] = self.extract_section(lines, 'experience')
+            info['skills'] = self.extract_section(lines, 'skills')
+        else:
+            info['key_phrases'] = self.extract_key_phrases(text, top_n=5)
+            info['summary'] = self.extract_summary(text)
+
+        if 'problem' not in info or not info['problem']:
+            info['problem'] = self.extract_summary(text)
+
         return info
 
 
@@ -62,7 +164,7 @@ class PitchDeck(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False)
-    upload_date = db.Column(db.DateTime, default=datetime.utcnow)
+    upload_date = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
     content = db.Column(db.Text)
     slide_count = db.Column(db.Integer)
     status = db.Column(db.String(50))
@@ -70,9 +172,14 @@ class PitchDeck(db.Model):
     char_count = db.Column(db.Integer)
     sentiment_score = db.Column(db.Float)
     sentiment_type = db.Column(db.String(50))
+    document_type = db.Column(db.String(50))
     problem = db.Column(db.Text)
     solution = db.Column(db.Text)
     market = db.Column(db.Text)
+    experience = db.Column(db.Text)
+    skills = db.Column(db.Text)
+    summary = db.Column(db.Text)
+    key_phrases = db.Column(db.Text)
 
     def __init__(self, filename, content, slide_count, analysis, status='processed'):
         self.filename = filename
@@ -83,9 +190,14 @@ class PitchDeck(db.Model):
         self.char_count = analysis['char_count']
         self.sentiment_score = analysis['sentiment_score']
         self.sentiment_type = analysis['sentiment_type']
+        self.document_type = analysis.get('document_type')
         self.problem = analysis.get('problem')
         self.solution = analysis.get('solution')
         self.market = analysis.get('market')
+        self.experience = analysis.get('experience')
+        self.skills = analysis.get('skills')
+        self.summary = analysis.get('summary')
+        self.key_phrases = ', '.join(analysis.get('key_phrases', [])) if analysis.get('key_phrases') else None
 
     def save(self, redis_client):
         try:

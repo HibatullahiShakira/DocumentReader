@@ -1,115 +1,36 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pitch Deck Analysis Dashboard</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-
-        h1 {
-            color: #333;
-        }
-
-        form {
-            margin-bottom: 20px;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-
-        th {
-            background-color: #f2f2f2;
-            color: #333;
-        }
-
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-
-        tr:hover {
-            background-color: #f1f1f1;
-        }
-
-        button {
-            padding: 10px 20px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background-color: #45a049;
-        }
-    </style>
+    <title>Document Reader Dashboard</title>
 </head>
 <body>
-<h1>Pitch Deck Analysis Dashboard</h1>
-<form id="uploadForm" action="/api/upload" method="post" enctype="multipart/form-data">
-    <label for="file">Choose File</label>
-    <input type="file" id="file" name="file" accept=".pdf,.pptx">
-    <button type="submit">Upload Pitch Deck</button>
-</form>
-<table>
-    <thead>
-    <tr>
-        <th>ID</th>
-        <th>Filename</th>
-        <th>Upload Date</th>
-        <th>Slide Count</th>
-        <th>Word Count</th>
-        <th>Sentiment</th>
-        <th>Problem</th>
-        <th>Solution</th>
-        <th>Market</th>
-        <th>Status</th>
-    </tr>
-    </thead>
-    <tbody>
-    {% if pitch_decks %}
-    {% for deck in pitch_decks %}
-    <tr>
-        <td>{{ deck.id }}</td>
-        <td>{{ deck.filename }}</td>
-        <td>{{ deck.upload_date }}</td>
-        <td>{{ deck.slide_count }}</td>
-        <td>{{ deck.word_count }}</td>
-        <td>{{ deck.sentiment }}</td>
-        <td>{{ deck.problem }}</td>
-        <td>{{ deck.solution }}</td>
-        <td>{{ deck.market }}</td>
-        <td>{{ deck.status }}</td>
-    </tr>
-    {% endfor %}
+<h1>Document Reader Dashboard</h1>
+{% for item in data %}
+<div>
+    <h2>{{ item.filename }}</h2>
+    <p><strong>Upload Date:</strong> {{ item.upload_date }}</p>
+    <p><strong>Document Type:</strong> {{ item.document_type }}</p>
+    <p><strong>Status:</strong> {{ item.status }}</p>
+    <p><strong>Slide Count:</strong> {{ item.slide_count }}</p>
+    <p><strong>Word Count:</strong> {{ item.word_count }}</p>
+    <p><strong>Character Count:</strong> {{ item.char_count }}</p>
+    <p><strong>Sentiment Score:</strong> {{ item.sentiment_score }}</p>
+    <p><strong>Sentiment Type:</strong> {{ item.sentiment_type }}</p>
+    {% if item.document_type == 'pitch_deck' %}
+    <p><strong>Problem:</strong> {{ item.problem or 'Not specified' }}</p>
+    <p><strong>Solution:</strong> {{ item.solution or 'Not specified' }}</p>
+    <p><strong>Market:</strong> {{ item.market or 'Not specified' }}</p>
+    {% elif item.document_type == 'resume' %}
+    <p><strong>Objective:</strong> {{ item.problem or 'Not specified' }}</p>
+    <p><strong>Experience:</strong> {{ item.experience or 'Not specified' }}</p>
+    <p><strong>Skills:</strong> {{ item.skills or 'Not specified' }}</p>
     {% else %}
-    <tr>
-        <td colspan="10">No pitch decks found. Please upload a file to analyze.</td>
-    </tr>
+    <p><strong>Summary:</strong> {{ item.summary or 'Not specified' }}</p>
+    <p><strong>Key Phrases:</strong> {{ item.key_phrases or 'Not specified' }}</p>
     {% endif %}
-    </tbody>
-</table>
-
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log("Script loaded");
-
-        document.getElementById('uploadForm').addEventListener('submit', function(event) {
-            console.log('Form submitted');
-        });
-    });
-</script>
+    <p><strong>Content:</strong> {{ item.content }}</p>
+</div>
+<hr>
+{% endfor %}
 </body>
 </html>

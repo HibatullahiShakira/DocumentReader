@@ -1,7 +1,5 @@
-# app/routes.py
 import os
 from flask import render_template, request, jsonify
-import redis
 import json
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -29,9 +27,14 @@ def init_routes(app, redis_client, parser):
                     'char_count': pd.char_count,
                     'sentiment_score': pd.sentiment_score,
                     'sentiment_type': pd.sentiment_type,
+                    'document_type': pd.document_type,
                     'problem': pd.problem,
                     'solution': pd.solution,
-                    'market': pd.market
+                    'market': pd.market,
+                    'experience': pd.experience,
+                    'skills': pd.skills,
+                    'summary': pd.summary,
+                    'key_phrases': pd.key_phrases
                 } for pd in pitch_decks]
                 redis_client.setex('dashboard_data', 300, json.dumps(data))
                 print("Cached new dashboard data")

@@ -42,6 +42,15 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         with open(self.test_pptx_path, "wb") as f:
             f.write(b"Placeholder PPTX content")
 
+        self.test_generic_pdf_path = os.path.join(self.app.config['UPLOAD_FOLDER'], "generic.pdf")
+        with open(self.test_generic_pdf_path, "w") as f:
+            f.write(
+                "This is a report on climate change impacts. "
+                "The earth is warming due to greenhouse gas emissions. "
+                "Scientists at NASA are researching renewable energy solutions to mitigate these effects. "
+                "The report was published in 2023."
+            )
+
     def tearDown(self):
         with self.app.app_context():
             try:
@@ -52,6 +61,8 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         self.redis_client.flushdb()
         if os.path.exists(self.test_pptx_path):
             os.remove(self.test_pptx_path)
+        if os.path.exists(self.test_generic_pdf_path):
+            os.remove(self.test_generic_pdf_path)
 
     def test_upload_endpoint_no_file(self):
         response = self.client.post('/api/upload')
@@ -153,7 +164,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             pitch_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
             self.assertIsNotNone(pitch_deck, "Pitch deck was not saved to the database")
             self.assertEqual(pitch_deck.filename, "Data Engineer.pdf")
-            # Normalize content by replacing multiple spaces with a single space
+            self.assertEqual(pitch_deck.document_type, "resume")
             normalized_content = re.sub(r'\s+', ' ', pitch_deck.content)
             self.assertIn("Shakira Hibatullahi", normalized_content)
             self.assertIn("Aspiring Data Engineer Intern", normalized_content)
@@ -165,6 +176,61 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             self.assertIsInstance(pitch_deck.sentiment_score, float)
             self.assertIn(pitch_deck.sentiment_type, ['Positive', 'Negative', 'Neutral'])
             self.assertIn("aspiring data engineer intern", pitch_deck.problem.lower())
+            self.assertIn("data engineering & analytics intern", pitch_deck.experience.lower())
+            self.assertIn("programming: python, sql, nosql", pitch_deck.skills.lower())
+            self.assertIsNone(pitch_deck.solution)
+            self.assertIsNone(pitch_deck.market)
+            self.assertIsNone(pitch_deck.summary)
+            self.assertIsNone(pitch_deck.key_phrases)
+
+        self.assertIsNone(self.redis_client.get('dashboard_data'), "Redis cache was not invalidated")
+
+    def test_worker_processing_generic_pdf(self):
+        job = {
+            'file_path': self.test_generic_pdf_path,
+            'filename': 'generic.pdf',
+            'timestamp': '2023-01-01T00:00:00'
+        }
+        self.redis_client.lpush('processing_queue', json.dumps(job))
+
+        sia = SentimentIntensityAnalyzer()
+        parser = PitchDeckParser(sia=sia)
+
+        content, slide_count = parser.parse_pdf(self.test_generic_pdf_path)
+        analysis = parser.analyze_content(content)
+
+        with self.app.app_context():
+            pitch_deck = PitchDeck(
+                filename="generic.pdf",
+                content=content,
+                slide_count=slide_count,
+                analysis=analysis,
+                status="processed"
+            )
+            pitch_deck.save(self.redis_client)
+
+        with self.app.app_context():
+            pitch_deck = PitchDeck.query.filter_by(filename="generic.pdf").first()
+            self.assertIsNotNone(pitch_deck, "Pitch deck was not saved to the database")
+            self.assertEqual(pitch_deck.filename, "generic.pdf")
+            self.assertEqual(pitch_deck.document_type, "generic")
+            self.assertIsInstance(pitch_deck.slide_count, int)
+            self.assertGreater(pitch_deck.slide_count, 0)
+            self.assertEqual(pitch_deck.word_count, len(content.split()))
+            self.assertEqual(pitch_deck.char_count, len(content))
+            self.assertEqual(pitch_deck.status, "processed")
+            self.assertIsInstance(pitch_deck.sentiment_score, float)
+            self.assertIn(pitch_deck.sentiment_type, ['Positive', 'Negative', 'Neutral'])
+            self.assertIn("climate change", pitch_deck.problem.lower())
+            self.assertIn("climate change", pitch_deck.summary.lower())
+            self.assertIn("renewable energy", pitch_deck.summary.lower())
+            self.assertIn("climate change", pitch_deck.key_phrases.lower())
+            self.assertIn("greenhouse gas", pitch_deck.key_phrases.lower())
+            self.assertIn("renewable energy", pitch_deck.key_phrases.lower())
+            self.assertIsNone(pitch_deck.solution)
+            self.assertIsNone(pitch_deck.market)
+            self.assertIsNone(pitch_deck.experience)
+            self.assertIsNone(pitch_deck.skills)
 
         self.assertIsNone(self.redis_client.get('dashboard_data'), "Redis cache was not invalidated")
 
@@ -174,6 +240,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             'char_count': 12,
             'sentiment_score': 0.5,
             'sentiment_type': 'Positive',
+            'document_type': 'pitch_deck',
             'problem': 'Test problem',
             'solution': 'Test solution',
             'market': 'Test market'
@@ -197,10 +264,15 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             self.assertEqual(retrieved_deck.char_count, 12)
             self.assertEqual(retrieved_deck.sentiment_score, 0.5)
             self.assertEqual(retrieved_deck.sentiment_type, "Positive")
+            self.assertEqual(retrieved_deck.document_type, "pitch_deck")
             self.assertEqual(retrieved_deck.problem, "Test problem")
             self.assertEqual(retrieved_deck.solution, "Test solution")
             self.assertEqual(retrieved_deck.market, "Test market")
             self.assertEqual(retrieved_deck.status, "processed")
+            self.assertIsNone(retrieved_deck.experience)
+            self.assertIsNone(retrieved_deck.skills)
+            self.assertIsNone(retrieved_deck.summary)
+            self.assertIsNone(retrieved_deck.key_phrases)
 
     def test_database_update(self):
         analysis = {
@@ -208,6 +280,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             'char_count': 12,
             'sentiment_score': 0.0,
             'sentiment_type': 'Neutral',
+            'document_type': 'pitch_deck',
             'problem': 'Initial problem',
             'solution': 'Initial solution',
             'market': 'Initial market'
@@ -227,6 +300,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
                 'char_count': 15,
                 'sentiment_score': 0.6,
                 'sentiment_type': 'Positive',
+                'document_type': 'pitch_deck',
                 'problem': 'Updated problem',
                 'solution': 'Updated solution',
                 'market': 'Updated market'
@@ -238,6 +312,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             pitch_deck.char_count = updated_analysis['char_count']
             pitch_deck.sentiment_score = updated_analysis['sentiment_score']
             pitch_deck.sentiment_type = updated_analysis['sentiment_type']
+            pitch_deck.document_type = updated_analysis['document_type']
             pitch_deck.problem = updated_analysis['problem']
             pitch_deck.solution = updated_analysis['solution']
             pitch_deck.market = updated_analysis['market']
@@ -251,6 +326,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             self.assertEqual(updated_deck.char_count, 15)
             self.assertEqual(updated_deck.sentiment_score, 0.6)
             self.assertEqual(updated_deck.sentiment_type, "Positive")
+            self.assertEqual(updated_deck.document_type, "pitch_deck")
             self.assertEqual(updated_deck.problem, "Updated problem")
             self.assertEqual(updated_deck.solution, "Updated solution")
             self.assertEqual(updated_deck.market, "Updated market")
@@ -262,6 +338,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             'char_count': 12,
             'sentiment_score': 0.5,
             'sentiment_type': 'Positive',
+            'document_type': 'pitch_deck',
             'problem': 'Test problem',
             'solution': 'Test solution',
             'market': 'Test market'
@@ -286,33 +363,51 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         sia = SentimentIntensityAnalyzer()
         parser = PitchDeckParser(sia=sia)
 
+        # Test a pitch deck document
         content = (
             "Our problem is that people struggle to find affordable housing.\n"
             "Our solution is a platform that connects renters with landlords directly.\n"
             "The market is the rental industry, valued at $100 billion."
-        )
+        ).strip()
         analysis = parser.analyze_content(content)
 
+        self.assertEqual(analysis['document_type'], "pitch_deck")
         self.assertEqual(analysis['problem'], "our problem is that people struggle to find affordable housing.")
         self.assertEqual(analysis['solution'],
                          "our solution is a platform that connects renters with landlords directly.")
         self.assertEqual(analysis['market'], "the market is the rental industry, valued at $100 billion.")
         self.assertIsInstance(analysis['sentiment_score'], float)
         self.assertIn(analysis['sentiment_type'], ['Positive', 'Negative', 'Neutral'])
-        self.assertEqual(analysis['word_count'], 31)  # Updated to correct count
-        self.assertEqual(analysis['char_count'],
-                         126)  # Updated to correct count (including spaces, punctuation, newlines)
+        self.assertEqual(analysis['word_count'], 31)
+        self.assertEqual(analysis['char_count'], 190)
+        self.assertIsNone(analysis.get('experience'))
+        self.assertIsNone(analysis.get('skills'))
+        self.assertIsNone(analysis.get('summary'))
+        self.assertIsNone(analysis.get('key_phrases'))
 
-        content = "This is a generic presentation with no specific details."
+        # Test a generic document
+        content = (
+            "This is a report on climate change impacts. "
+            "The earth is warming due to greenhouse gas emissions. "
+            "Scientists at NASA are researching renewable energy solutions to mitigate these effects. "
+            "The report was published in 2023."
+        )
         analysis = parser.analyze_content(content)
 
-        self.assertNotIn('problem', analysis)
+        self.assertEqual(analysis['document_type'], "generic")
         self.assertNotIn('solution', analysis)
         self.assertNotIn('market', analysis)
         self.assertIsInstance(analysis['sentiment_score'], float)
         self.assertIn(analysis['sentiment_type'], ['Positive', 'Negative', 'Neutral'])
-        self.assertEqual(analysis['word_count'], 9)
-        self.assertEqual(analysis['char_count'], 55)
+        self.assertEqual(analysis['word_count'], 29)
+        self.assertEqual(analysis['char_count'], 165)
+        self.assertIn("climate change", analysis['summary'])
+        self.assertIn("renewable energy", analysis['summary'])
+        self.assertIn("climate change", ', '.join(analysis['key_phrases']).lower())
+        self.assertIn("greenhouse gas", ', '.join(analysis['key_phrases']).lower())
+        self.assertIn("renewable energy", ', '.join(analysis['key_phrases']).lower())
+        self.assertIsNone(analysis.get('experience'))
+        self.assertIsNone(analysis.get('skills'))
 
     def test_file_handling_and_database(self):
         with open(self.test_pdf_path, "rb") as f:
@@ -342,10 +437,10 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             pitch_deck.save(self.redis_client)
 
         with self.app.app_context():
-            pitch_deck = PitchDeck.query.filter_by(
-                filename="Data_Engineer.pdf").first()
+            pitch_deck = PitchDeck.query.filter_by(filename="Data_Engineer.pdf").first()
             self.assertIsNotNone(pitch_deck, "Pitch deck was not saved to the database")
             self.assertEqual(pitch_deck.status, "processed")
+            self.assertEqual(pitch_deck.document_type, "resume")
             self.assertIn("Shakira Hibatullahi", re.sub(r'\s+', ' ', pitch_deck.content))
             self.assertIn("Aspiring Data Engineer Intern", re.sub(r'\s+', ' ', pitch_deck.content))
             self.assertIsInstance(pitch_deck.slide_count, int)

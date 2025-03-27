@@ -1,14 +1,23 @@
-# app/worker.py
 import redis
 import json
 import os
+import logging
+import signal
+import sys
 from datetime import datetime
-import nltk
-nltk.download('vader_lexicon')
 from flask import Flask
 from dotenv import load_dotenv
 from app.models import PitchDeckParser, PitchDeck, db
 from app.config import get_config
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -25,46 +34,69 @@ try:
         decode_responses=True
     )
     redis_client.ping()
-    print("Successfully connected to Redis")
+    logger.info("Successfully connected to Redis")
 except redis.ConnectionError as e:
-    print(f"Failed to connect to Redis: {e}")
+    logger.error(f"Failed to connect to Redis: {e}")
     raise
 
-print("Starting worker")
+keep_running = True
+
+
+def signal_handler(sig, frame):
+    global keep_running
+    logger.info("Received shutdown signal. Finishing current job and exiting...")
+    keep_running = False
+
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
 
 def process_queue():
     parser = PitchDeckParser()
     with app.app_context():
-        while True:
+        while keep_running:
             try:
-                print("Waiting for job in processing queue")
+                logger.info("Waiting for job in processing queue")
                 job_data = redis_client.brpop('processing_queue', timeout=5)
-                if job_data:
+                if job_data and keep_running:
                     _, job_json = job_data
                     job = json.loads(job_json)
                     file_path = job['file_path']
                     filename = job['filename']
 
-                    print(f"Processing file: {filename}")
+                    logger.info(f"Processing file: {filename}")
+                    start_time = datetime.now()
                     if filename.endswith('.pdf'):
                         content, slide_count = parser.parse_pdf(file_path)
                     else:
                         content, slide_count = parser.parse_pptx(file_path)
 
-                    print("Analyzing content")
+                    logger.info("Analyzing content")
                     analysis = parser.analyze_content(content)
+                    logger.debug(f"Analysis results: {analysis}")
 
-                    print("Storing data in database")
+                    logger.info("Storing data in database")
                     pitch_deck = PitchDeck(filename, content, slide_count, analysis)
                     pitch_deck.save(redis_client)
 
-                    print("Cleaning up temporary file")
+                    logger.info("Cleaning up temporary file")
                     if os.path.exists(file_path):
-                        os.remove(file_path)
-                    print(f"Processed file: {filename}")
+                        try:
+                            os.remove(file_path)
+                            logger.info(f"Deleted temporary file: {file_path}")
+                        except OSError as e:
+                            logger.error(f"Failed to delete temporary file {file_path}: {e}")
+                    else:
+                        logger.warning(f"Temporary file not found: {file_path}")
+
+                    processing_time = (datetime.now() - start_time).total_seconds()
+                    logger.info(f"Processed file: {filename} in {processing_time:.2f} seconds")
             except Exception as e:
-                print(f"Queue processing error: {e}")
+                logger.error(f"Queue processing error: {e}")
+
 
 if __name__ == '__main__':
-    print("Starting queue processing")
+    logger.info("Starting queue processing")
     process_queue()
+    logger.info("Worker stopped")
