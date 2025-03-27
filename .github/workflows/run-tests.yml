@@ -53,12 +53,17 @@ jobs:
           fi
 
       - name: Verify PostgreSQL connection
+        env:
+          POSTGRES_USER: shakira
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: documentreader_test
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5433
+          PGPASSWORD: password
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
           psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1;"
-        env:
-          PGPASSWORD: password
 
       - name: Verify Redis connection
         run: |
