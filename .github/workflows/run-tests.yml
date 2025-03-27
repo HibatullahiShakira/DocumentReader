@@ -45,6 +45,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Download NLTK data
+        run: |
+          python -m nltk.downloader vader_lexicon
+
       - name: Check for Data Engineer.pdf
         run: |
           if [ ! -f test_uploads/Data\ Engineer.pdf ]; then
