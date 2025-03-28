@@ -21,6 +21,7 @@ nltk.download('vader_lexicon')
 
 db = SQLAlchemy()
 
+
 class PitchDeckParser:
     def __init__(self, sia=None):
         self.sia = sia if sia else SentimentIntensityAnalyzer()
@@ -55,8 +56,10 @@ class PitchDeckParser:
     def detect_document_type(self, text):
         text_lower = text.lower()
         pitch_deck_keywords = ['problem is', 'solution is', 'market is', 'our problem', 'our solution']
-        if any(keyword in text_lower for keyword in pitch_deck_keywords):
-            return 'pitch_deck'
+        for keyword in pitch_deck_keywords:
+            if keyword in text_lower:
+                print(f"Found pitch deck keyword: {keyword}")
+                return 'pitch_deck'
 
         personal_sections = ['objective', 'summary', 'profile']
         other_sections = ['experience', 'education', 'skills', 'certifications']
@@ -83,12 +86,14 @@ class PitchDeckParser:
 
     def extract_section(self, lines, start_keyword, max_lines=5):
         for i, line in enumerate(lines):
-            if start_keyword in line.lower():
+            line_lower = line.lower().strip()
+            if line_lower == start_keyword or line_lower.startswith(f"{start_keyword} &"):
                 section_lines = [line.strip()]
                 for j in range(1, max_lines + 1):
                     if i + j < len(lines):
                         next_line = lines[i + j].strip()
-                        if not next_line or next_line.lower().startswith(('objective', 'summary', 'profile', 'experience', 'skills', 'education', 'certifications')):
+                        next_line_lower = next_line.lower()
+                        if not next_line or next_line_lower.startswith(('objective', 'summary', 'profile', 'experience', 'skills', 'education', 'certifications')):
                             break
                         section_lines.append(next_line)
                     else:
