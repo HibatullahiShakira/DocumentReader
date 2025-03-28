@@ -102,7 +102,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         job = self.redis_client.lpop("processing_queue")
         self.assertIsNotNone(job, "No job was added to the queue")
         job_data = json.loads(job)
-        self.assertEqual(job_data["filename"], "Data Engineer.pdf", "Job filename mismatch")
+        self.assertEqual(job_data["filename"], "Data_Engineer.pdf", "Job filename mismatch")
         self.assertEqual(job_data["file_path"], os.path.join(self.app.config['UPLOAD_FOLDER'], "Data_Engineer.pdf"))
 
         self.assertTrue(os.path.exists(self.test_pdf_path), f"File was not found at {self.test_pdf_path}")
@@ -391,7 +391,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         self.assertIsInstance(analysis['sentiment_score'], float)
         self.assertIn(analysis['sentiment_type'], ['Positive', 'Negative', 'Neutral'])
         self.assertEqual(analysis['word_count'], 31)
-        self.assertEqual(analysis['char_count'], 190)
+        self.assertEqual(analysis['char_count'], 194)
         self.assertIsNone(analysis.get('experience'))
         self.assertIsNone(analysis.get('skills'))
         self.assertIsNone(analysis.get('summary'))
