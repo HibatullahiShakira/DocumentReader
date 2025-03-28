@@ -13,11 +13,11 @@ from datetime import datetime, UTC
 nltk.download('punkt')
 nltk.download('punkt_tab')
 nltk.download('averaged_perceptron_tagger')
+nltk.download('averaged_perceptron_tagger_eng')
 nltk.download('stopwords')
 nltk.download('vader_lexicon')
 
 db = SQLAlchemy()
-
 
 class PitchDeckParser:
     def __init__(self, sia=None):
@@ -33,7 +33,7 @@ class PitchDeckParser:
                     page_text = page.extract_text().strip()
                     if page_text:
                         content += page_text + "\n"
-                return content.rstrip(), len(pdf_reader.pages)  # Remove trailing newline
+                return content.rstrip(), len(pdf_reader.pages)
         except Exception as e:
             print(f"PDF parsing error: {e}")
             raise
@@ -64,15 +64,14 @@ class PitchDeckParser:
 
         return 'generic'
 
-    def extract_section(self, lines, start_keyword, max_lines=2):
+    def extract_section(self, lines, start_keyword, max_lines=5):  # Increased max_lines
         for i, line in enumerate(lines):
-            if start_keyword in line:
+            if start_keyword in line.lower():  # Case-insensitive match
                 section_lines = [line.strip()]
                 for j in range(1, max_lines + 1):
                     if i + j < len(lines):
                         next_line = lines[i + j].strip()
-                        if not next_line or next_line.startswith(
-                                ('●', 'objective', 'summary', 'profile', 'experience', 'skills')):
+                        if not next_line or next_line.lower().startswith(('objective', 'summary', 'profile', 'experience', 'skills', 'education', 'certifications')):
                             break
                         section_lines.append(next_line)
                     else:
@@ -125,7 +124,7 @@ class PitchDeckParser:
         info = {
             'upload_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'word_count': len(text.split()),
-            'char_count': len(text.replace('\n', ''))  # Exclude newlines
+            'char_count': len(text.replace('\n', ''))
         }
         sentiment = self.sia.polarity_scores(text)
         info['sentiment_score'] = sentiment['compound']
@@ -158,7 +157,6 @@ class PitchDeckParser:
             info['problem'] = self.extract_summary(text)
 
         return info
-
 
 class PitchDeck(db.Model):
     __tablename__ = 'pitch_decks'
