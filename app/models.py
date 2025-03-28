@@ -92,7 +92,7 @@ class PitchDeckParser:
     def extract_section(self, lines, start_keyword, max_lines=10):
         for i, line in enumerate(lines):
             line_lower = line.lower().strip()
-            if re.match(rf'^{start_keyword}(?:\s*|\s*:.*|\s+.*)$', line_lower):
+            if re.search(rf'(?i)\b{start_keyword}(?:\s*(?:&.*)?(?:\s*:.*|\s+.*)?$)', line_lower):
                 section_lines = [line.strip()]
                 for j in range(1, max_lines + 1):
                     if i + j < len(lines):
@@ -105,7 +105,7 @@ class PitchDeckParser:
                         break
                 return re.sub(r'\s+', ' ', ' '.join(section_lines))
             if start_keyword == 'experience':
-                if re.match(r'^[a-zA-Z\s&-]+(?:intern|engineer|developer|analyst|manager|specialist)(?:\s*|\s*:.*|\s+.*)$', line_lower):
+                if re.search(r'(?i)[a-z\s&-]+(?:intern|engineer|developer|analyst|manager|specialist)(?:\s*:.*|\s+.*)?$', line_lower):
                     section_lines = [line.strip()]
                     for j in range(1, max_lines + 1):
                         if i + j < len(lines):
@@ -129,6 +129,9 @@ class PitchDeckParser:
         for word, tag in tagged_words:
             if tag.startswith(('NN', 'JJ')) or '-' in word:
                 current_phrase.append(word)
+                if len(current_phrase) >= 3:
+                    phrases.append(' '.join(current_phrase[-3:]))
+                    current_phrase = current_phrase[-2:]
             else:
                 if current_phrase and len(current_phrase) > 1:
                     phrases.append(' '.join(current_phrase))
