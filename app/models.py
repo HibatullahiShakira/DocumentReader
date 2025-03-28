@@ -72,13 +72,13 @@ class PitchDeckParser:
         has_other_section = False
 
         for keyword in personal_sections:
-            if re.search(rf'^{keyword}(?:\s*$|\s+.*$)', text_lower, re.MULTILINE):
+            if re.search(rf'(?i)\b{keyword}\b(?:\s*$|\s+.*$)', text_lower, re.MULTILINE):
                 print(f"Found personal section: {keyword}")
                 has_personal_section = True
                 break
 
         for keyword in other_sections:
-            if re.search(rf'^{keyword}(?:\s*$|\s+.*$)', text_lower, re.MULTILINE):
+            if re.search(rf'(?i)\b{keyword}(?:\s*(?:&.*)?(?:\s*$|\s+.*$))', text_lower, re.MULTILINE):
                 print(f"Found other section: {keyword}")
                 has_other_section = True
                 break
@@ -121,16 +121,14 @@ class PitchDeckParser:
 
     def extract_key_phrases(self, text, top_n=5):
         words = word_tokenize(text.lower())
-        words = [word for word in words if word.isalnum() and word not in self.stop_words]
+        words = [word for word in words if word.isalnum() or '-' in word]
+        words = [word for word in words if word not in self.stop_words]
         tagged_words = pos_tag(words)
         phrases = []
         current_phrase = []
         for word, tag in tagged_words:
-            if tag.startswith(('NN', 'JJ')):
+            if tag.startswith(('NN', 'JJ')) or '-' in word:
                 current_phrase.append(word)
-                if len(current_phrase) >= 3:
-                    phrases.append(' '.join(current_phrase))
-                    current_phrase = []
             else:
                 if current_phrase and len(current_phrase) > 1:
                     phrases.append(' '.join(current_phrase))
@@ -139,9 +137,7 @@ class PitchDeckParser:
             phrases.append(' '.join(current_phrase))
 
         phrase_counts = Counter(phrases)
-        key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1 and count > 1]
-        if not key_phrases:
-            key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1]
+        key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1]
         return key_phrases if key_phrases else ["No key phrases identified"]
 
     def extract_summary(self, text, max_sentences=3):
@@ -150,7 +146,7 @@ class PitchDeckParser:
             return "No content to summarize."
 
         key_phrases = self.extract_key_phrases(text, top_n=5)
-        if not key_phrases:
+        if not key_phrases or key_phrases == ["No key phrases identified"]:
             return ' '.join(sentences[:max_sentences]).strip()
 
         sentence_scores = []
@@ -158,11 +154,8 @@ class PitchDeckParser:
             score = sum(1 for phrase in key_phrases if phrase.lower() in sentence.lower())
             sentence_scores.append((sentence, score))
 
-        sentence_scores.sort(key=lambda x: x[1], reverse=True)
-        top_sentences = [sentence for sentence, score in sentence_scores[:max_sentences] if score > 0]
-        if not top_sentences:
-            top_sentences = sentences[:max_sentences]
-        top_sentences = sorted(top_sentences, key=lambda s: sentences.index(s))
+        sentence_scores.sort(key=lambda x: (-x[1], sentences.index(x[0])))
+        top_sentences = [sentence for sentence, score in sentence_scores[:max_sentences]]
         return ' '.join(top_sentences).strip()
 
     def analyze_content(self, text):
