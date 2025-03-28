@@ -7,7 +7,6 @@ from app.app import create_app
 from app.models import db, PitchDeck, PitchDeckParser
 from nltk.sentiment import SentimentIntensityAnalyzer
 
-
 class TestPitchDeckFunctionalities(unittest.TestCase):
     def setUp(self):
         self.app = create_app()
@@ -42,10 +41,8 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         with open(self.test_pptx_path, "wb") as f:
             f.write(b"Placeholder PPTX content")
 
-        self.test_generic_pdf_path = os.path.join(self.app.config['UPLOAD_FOLDER'],
-                                                  "Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf")
-        print(
-            f"Looking for Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf at: {self.test_generic_pdf_path}")
+        self.test_generic_pdf_path = os.path.join(self.app.config['UPLOAD_FOLDER'], "Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf")
+        print(f"Looking for Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf at: {self.test_generic_pdf_path}")
         if not os.path.exists(self.test_generic_pdf_path):
             self.fail(f"Test PDF file not found at {self.test_generic_pdf_path}.")
 
@@ -70,24 +67,21 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             self.assertIsNone(pitch_deck, "A pitch deck was unexpectedly saved to the database")
 
     def test_upload_endpoint_invalid_file(self):
-        """Test uploading an invalid file type (e.g., .txt) to the endpoint."""
-
-        invalid_file_path = os.path.join("test_uploads", "test.txt")
-        with open(invalid_file_path, "w") as f:
-            f.write("This is a test file.")
-
-        # Simulate uploading the invalid file
-        with open(invalid_file_path, "rb") as f:
+        with open("test.txt", "w") as f:
+            f.write("Invalid file")
+        with open("test.txt", "rb") as f:
             response = self.client.post(
-                "/upload",
-                data={"file": (f, "test.txt")},
-                content_type="multipart/form-data"
+                '/api/upload',
+                content_type='multipart/form-data',
+                data={'file': (f, 'test.txt')}
             )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json, {'error': 'Unsupported file format'})
 
-        self.assertEqual(response.status_code, 404)
-        self.assertIn("Invalid file type", response.get_data(as_text=True))
-
-        os.remove(invalid_file_path)
+        with self.app.app_context():
+            pitch_deck = PitchDeck.query.filter_by(filename="test.txt").first()
+            self.assertIsNone(pitch_deck, "A pitch deck was unexpectedly saved to the database")
+        os.remove("test.txt")
 
     def test_upload_endpoint_valid_pdf_file(self):
         with open(self.test_pdf_path, "rb") as f:
@@ -217,8 +211,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             pitch_deck.save(self.redis_client)
 
         with self.app.app_context():
-            pitch_deck = PitchDeck.query.filter_by(
-                filename="Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf").first()
+            pitch_deck = PitchDeck.query.filter_by(filename="Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf").first()
             self.assertIsNotNone(pitch_deck, "Pitch deck was not saved to the database")
             self.assertEqual(pitch_deck.filename, "Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf")
             self.assertEqual(pitch_deck.document_type, "generic")
@@ -404,7 +397,6 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             self.assertGreater(pitch_deck.slide_count, 0)
             self.assertEqual(pitch_deck.word_count, len(content.split()))
             self.assertEqual(pitch_deck.char_count, len(content.replace('\n', '')))
-
 
 if __name__ == "__main__":
     unittest.main()
