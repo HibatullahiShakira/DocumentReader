@@ -89,17 +89,17 @@ class PitchDeckParser:
 
         return 'generic'
 
-    def extract_section(self, lines, start_keyword, max_lines=5):
+    def extract_section(self, lines, start_keyword, max_lines=10):
         for i, line in enumerate(lines):
             line_lower = line.lower().strip()
-            if re.match(rf'^{start_keyword}(?:\s+.*|$)', line_lower) or re.match(rf'^{start_keyword}\s*:', line_lower):
+            if (re.match(rf'^{start_keyword}(?:\s*|\s+&.*|\s*:.*)$', line_lower) and
+                    not re.search(rf'^{start_keyword}\s+[^&:].*', line_lower)):
                 section_lines = [line.strip()]
                 for j in range(1, max_lines + 1):
                     if i + j < len(lines):
                         next_line = lines[i + j].strip()
                         next_line_lower = next_line.lower()
-                        if not next_line or next_line_lower.startswith(('objective', 'summary', 'profile', 'experience',
-                                                                        'skills', 'education', 'certifications')):
+                        if not next_line or next_line_lower.startswith(('objective', 'summary', 'profile', 'experience', 'skills', 'education', 'certifications')):
                             break
                         section_lines.append(next_line)
                     else:
@@ -116,15 +116,20 @@ class PitchDeckParser:
         for word, tag in tagged_words:
             if tag.startswith(('NN', 'JJ')):
                 current_phrase.append(word)
-            else:
-                if current_phrase:
+                if len(current_phrase) >= 3:
                     phrases.append(' '.join(current_phrase))
                     current_phrase = []
-        if current_phrase:
+            else:
+                if current_phrase and len(current_phrase) > 1:
+                    phrases.append(' '.join(current_phrase))
+                current_phrase = []
+        if current_phrase and len(current_phrase) > 1:
             phrases.append(' '.join(current_phrase))
 
         phrase_counts = Counter(phrases)
-        key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1]
+        key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1 and count > 1]
+        if not key_phrases:
+            key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1]
         return key_phrases if key_phrases else ["No key phrases identified"]
 
     def extract_summary(self, text, max_sentences=3):
@@ -185,7 +190,6 @@ class PitchDeckParser:
             info['problem'] = self.extract_summary(text)
 
         return info
-
 
 class PitchDeck(db.Model):
     __tablename__ = 'pitch_decks'
