@@ -1,16 +1,17 @@
 import pptx
 import pypdf
+import re
 from nltk.sentiment import SentimentIntensityAnalyzer
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
 from nltk.tag import pos_tag
 import nltk
-import re
 from collections import Counter
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, UTC
 
 nltk.download('punkt')
+nltk.download('punkt_tab')
 nltk.download('averaged_perceptron_tagger')
 nltk.download('stopwords')
 nltk.download('vader_lexicon')
@@ -29,8 +30,10 @@ class PitchDeckParser:
                 pdf_reader = pypdf.PdfReader(file)
                 content = ""
                 for page in pdf_reader.pages:
-                    content += page.extract_text() + "\n"
-                return content, len(pdf_reader.pages)
+                    page_text = page.extract_text().strip()
+                    if page_text:
+                        content += page_text + "\n"
+                return content.rstrip(), len(pdf_reader.pages)  # Remove trailing newline
         except Exception as e:
             print(f"PDF parsing error: {e}")
             raise
@@ -55,7 +58,6 @@ class PitchDeckParser:
             return 'pitch_deck'
 
         resume_keywords = ['objective', 'summary', 'profile', 'experience', 'education', 'skills', 'certifications']
-        # Look for keywords in a section-like format (e.g., "skills:" or "Skills\n")
         for keyword in resume_keywords:
             if re.search(rf'^{keyword}\s*:|^\s*{keyword}\s*\n', text_lower, re.MULTILINE):
                 return 'resume'
@@ -67,25 +69,25 @@ class PitchDeckParser:
             if start_keyword in line:
                 section_lines = [line.strip()]
                 for j in range(1, max_lines + 1):
-                    if i + j < len(lines) and lines[i + j].strip() and not lines[i + j].strip().startswith('●'):
-                        section_lines.append(lines[i + j].strip())
+                    if i + j < len(lines):
+                        next_line = lines[i + j].strip()
+                        if not next_line or next_line.startswith(
+                                ('●', 'objective', 'summary', 'profile', 'experience', 'skills')):
+                            break
+                        section_lines.append(next_line)
                     else:
                         break
-                return ' '.join(section_lines)
+                return re.sub(r'\s+', ' ', ' '.join(section_lines))
         return None
 
     def extract_key_phrases(self, text, top_n=5):
-        """
-        Extract key phrases from the text using frequency-based method with POS tagging.
-        Returns a list of the top N key phrases.
-        """
         words = word_tokenize(text.lower())
         words = [word for word in words if word.isalnum() and word not in self.stop_words]
         tagged_words = pos_tag(words)
         phrases = []
         current_phrase = []
         for word, tag in tagged_words:
-            if tag.startswith(('NN', 'JJ')):  # Nouns (NN) or adjectives (JJ)
+            if tag.startswith(('NN', 'JJ')):
                 current_phrase.append(word)
             else:
                 if current_phrase:
@@ -99,9 +101,6 @@ class PitchDeckParser:
         return key_phrases if key_phrases else ["No key phrases identified"]
 
     def extract_summary(self, text, max_sentences=3):
-        """
-        Extract a summary of the content by selecting sentences with key phrases.
-        """
         sentences = sent_tokenize(text.strip())
         if not sentences:
             return "No content to summarize."
@@ -126,7 +125,7 @@ class PitchDeckParser:
         info = {
             'upload_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'word_count': len(text.split()),
-            'char_count': len(text)
+            'char_count': len(text.replace('\n', ''))  # Exclude newlines
         }
         sentiment = self.sia.polarity_scores(text)
         info['sentiment_score'] = sentiment['compound']

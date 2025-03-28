@@ -42,7 +42,6 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         with open(self.test_pptx_path, "wb") as f:
             f.write(b"Placeholder PPTX content")
 
-        # Use Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf for the generic document test
         self.test_generic_pdf_path = os.path.join(self.app.config['UPLOAD_FOLDER'],
                                                   "Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf")
         print(
@@ -219,8 +218,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             self.assertEqual(pitch_deck.status, "processed")
             self.assertIsInstance(pitch_deck.sentiment_score, float)
             self.assertIn(pitch_deck.sentiment_type, ['Positive', 'Negative', 'Neutral'])
-            self.assertIn("full stack developer",
-                          pitch_deck.problem.lower())  # problem is set to summary for generic docs
+            self.assertIn("full stack developer", pitch_deck.problem.lower())
             self.assertIn("full stack developer", pitch_deck.summary.lower())
             self.assertIn("web application", pitch_deck.summary.lower())
             self.assertIn("full stack developer", pitch_deck.key_phrases.lower())
