@@ -11,7 +11,6 @@ from collections import Counter
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, UTC
 
-
 nltk.download('punkt')
 nltk.download('punkt_tab')
 nltk.download('averaged_perceptron_tagger')
@@ -55,10 +54,16 @@ class PitchDeckParser:
 
     def detect_document_type(self, text):
         text_lower = text.lower()
-        pitch_deck_keywords = ['problem is', 'solution is', 'market is', 'our problem', 'our solution']
-        for keyword in pitch_deck_keywords:
-            if keyword in text_lower:
-                print(f"Found pitch deck keyword: {keyword}")
+        pitch_deck_patterns = [
+            r'our problem is\s+[^.\n]+',
+            r'our solution is\s+[^.\n]+',
+            r'the market is\s+[^.\n]+',
+            r'problem is\s+[^.\n]+',
+            r'solution is\s+[^.\n]+'
+        ]
+        for pattern in pitch_deck_patterns:
+            if re.search(pattern, text_lower):
+                print(f"Found pitch deck pattern: {pattern}")
                 return 'pitch_deck'
 
         personal_sections = ['objective', 'summary', 'profile']
@@ -87,13 +92,14 @@ class PitchDeckParser:
     def extract_section(self, lines, start_keyword, max_lines=5):
         for i, line in enumerate(lines):
             line_lower = line.lower().strip()
-            if line_lower == start_keyword or line_lower.startswith(f"{start_keyword} &"):
+            if re.match(rf'^{start_keyword}(?:\s+.*|$)', line_lower) or re.match(rf'^{start_keyword}\s*:', line_lower):
                 section_lines = [line.strip()]
                 for j in range(1, max_lines + 1):
                     if i + j < len(lines):
                         next_line = lines[i + j].strip()
                         next_line_lower = next_line.lower()
-                        if not next_line or next_line_lower.startswith(('objective', 'summary', 'profile', 'experience', 'skills', 'education', 'certifications')):
+                        if not next_line or next_line_lower.startswith(('objective', 'summary', 'profile', 'experience',
+                                                                        'skills', 'education', 'certifications')):
                             break
                         section_lines.append(next_line)
                     else:
@@ -179,6 +185,7 @@ class PitchDeckParser:
             info['problem'] = self.extract_summary(text)
 
         return info
+
 
 class PitchDeck(db.Model):
     __tablename__ = 'pitch_decks'
