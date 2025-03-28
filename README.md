@@ -1,26 +1,85 @@
-# Pitch Deck Parser
+**PitchDeck Processor**
+A Flask-based web application for uploading, processing, and analyzing pitch deck files (PDF and PPTX). The app queues uploaded files for processing using Redis, stores metadata in a database, and displays analysis results on a dashboard.
 
-## Overview
-A Flask-based web application that parses pitch deck documents (PDF or PPTX files), performs sentiment analysis, and stores extracted information in PostgreSQL. The application uses Redis for caching dashboard data and queuing file processing tasks.
+**Features**
+File Upload: Upload pitch deck files via a web API (/api/upload).
+Supported Formats: Accepts .pdf and .pptx files.
+Processing Queue: Uses Redis to queue files for background processing.
+Dashboard: View uploaded pitch decks with metadata like slide count, sentiment analysis, and key phrases.
+Caching: Dashboard data is cached in Redis for 5 minutes to improve performance.
+Error Handling: Returns meaningful error messages for invalid file types or missing files.
+
+**Tech Stack**
+Backend: Flask (Python)
+Database: SQLAlchemy (with a PitchDeck model)
+Queue: Redis
+Frontend: HTML templates (e.g., dashboard.html)
+Testing: Unit tests with unittest
+Prerequisites
+Python 3.8+
+Redis server
+A relational database (e.g., PostgreSQL, SQLite)
+
+I understand you want the entire README content generated in full, ready to copy and paste directly into your README.md file without any missing pieces or need for further clarification. Based on our previous interactions, I’ll ensure all sections—including the "Installation" steps 1 through 7 and every other part—are complete and included. I’ll also double-check that it’s comprehensive and aligns with the Flask app code you provided earlier.
+
+Here’s the full README content in Markdown format, designed for immediate copy-pasting:
+
+text
+
+Collapse
+
+Wrap
+
+Copy
+# PitchDeck Processor
+
+A Flask-based web application for uploading, processing, and analyzing pitch deck files (PDF and PPTX). The app queues uploaded files for processing using Redis, stores metadata in a database, and displays analysis results on a dashboard.
 
 ## Features
-- File upload with validation (PDF/PPTX only, 10MB max)
-- Document parsing using PyPDF2 and python-pptx
-- Sentiment analysis using NLTK's VADER
-- PostgreSQL storage for extracted data
-- Redis for caching dashboard data and queuing file processing
-- Separate worker service for asynchronous processing
-- Basic dashboard interface with separated CSS and JavaScript
-- Error handling for file uploads, database connections, and parsing
-- Unit tests for critical functionalities
+- **File Upload**: Upload pitch deck files via a web API (`/api/upload`).
+- **Supported Formats**: Accepts `.pdf` and `.pptx` files.
+- **Processing Queue**: Uses Redis to queue files for background processing.
+- **Dashboard**: View uploaded pitch decks with metadata like slide count, sentiment analysis, and key phrases.
+- **Caching**: Dashboard data is cached in Redis for 5 minutes to improve performance.
+- **Error Handling**: Returns meaningful error messages for invalid file types or missing files.
+
+## Tech Stack
+- **Backend**: Flask (Python)
+- **Database**: SQLAlchemy (with a `PitchDeck` model)
+- **Queue**: Redis
+- **Frontend**: HTML templates (e.g., `dashboard.html`)
+- **Testing**: Unit tests with `unittest`
 
 ## Prerequisites
-- Docker
-- Docker Compose
-- GitHub account with Docker Hub integration
+- Python 3.8+
+- Redis server
+- A relational database (e.g., PostgreSQL, SQLite)
 
-## Setup
-1. Clone the repository:
+## Installation
+
+1. **Clone the Repository**
    ```bash
-   git clone <repository-url>
-   cd pitch-deck-parser
+   git clone https://github.com/yourusername/pitchdeck-processor.git
+   cd pitchdeck-processor
+2. **Create a Virtual Environment**
+      ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+3.** Install Dependencies**
+
+      pip install -r requirements.txt
+4. **Set Up Environment Variables**
+      Create a .env file in the root directory with the following:
+         FLASK_APP=app
+         FLASK_ENV=development
+         DATABASE_URL=sqlite:///pitchdecks.db  # Or your database URL
+         REDIS_URL=redis://localhost:6379/0
+         UPLOAD_FOLDER=/path/to/uploads
+   
+5. **Start Redis**
+   Ensure a Redis server is running locally or update REDIS_URL to point to your Redis instance:
+      ```bash
+   redis-server
+7. Run the Application
+   ```bash
+   flask run
