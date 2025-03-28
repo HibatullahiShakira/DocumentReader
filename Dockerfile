@@ -35,6 +35,9 @@ RUN mkdir -p /home/appuser/nltk_data
 RUN cp -r /root/nltk_data/* /home/appuser/nltk_data/ || true
 RUN chown -R appuser:appuser /home/appuser/nltk_data
 
+# Change ownership of the /app directory to appuser
+RUN chown -R appuser:appuser /app
+
 # Switch to the non-root user
 USER appuser
 
