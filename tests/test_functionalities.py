@@ -69,24 +69,25 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             pitch_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
             self.assertIsNone(pitch_deck, "A pitch deck was unexpectedly saved to the database")
 
+    def test_upload_endpoint_invalid_file(self):
+        """Test uploading an invalid file type (e.g., .txt) to the endpoint."""
 
-def test_upload_endpoint_invalid_file(self):
-    invalid_file_path = os.path.join("test_uploads", "test.txt")
-    with open(invalid_file_path, "w") as f:
-        f.write("This is a test file.")
+        invalid_file_path = os.path.join("test_uploads", "test.txt")
+        with open(invalid_file_path, "w") as f:
+            f.write("This is a test file.")
 
-    # Simulate uploading the invalid file
-    with open(invalid_file_path, "rb") as f:
-        response = self.client.post(
-            "/upload",
-            data={"file": (f, "test.txt")},
-            content_type="multipart/form-data"
-        )
+        # Simulate uploading the invalid file
+        with open(invalid_file_path, "rb") as f:
+            response = self.client.post(
+                "/upload",
+                data={"file": (f, "test.txt")},
+                content_type="multipart/form-data"
+            )
 
-    self.assertEqual(response.status_code, 400)
-    self.assertIn("Invalid file type", response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Invalid file type", response.get_data(as_text=True))
 
-    os.remove(invalid_file_path)
+        os.remove(invalid_file_path)
 
     def test_upload_endpoint_valid_pdf_file(self):
         with open(self.test_pdf_path, "rb") as f:
