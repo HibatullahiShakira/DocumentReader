@@ -1,6 +1,5 @@
 import pdfplumber
 import pptx
-import pypdf
 import re
 from nltk.sentiment import SentimentIntensityAnalyzer
 from nltk.tokenize import word_tokenize, sent_tokenize
@@ -92,8 +91,8 @@ class PitchDeckParser:
     def extract_section(self, lines, start_keyword, max_lines=10):
         for i, line in enumerate(lines):
             line_lower = line.lower().strip()
-            if (re.match(rf'^{start_keyword}(?:\s*|\s+&.*|\s*:.*)$', line_lower) and
-                    not re.search(rf'^{start_keyword}\s+[^&:].*', line_lower)):
+            if (re.search(rf'\b{start_keyword}\b(?:\s*|\s+&.*|\s*:.*)$', line_lower) and
+                    not re.search(rf'\b{start_keyword}\b\s+[^&:].*', line_lower)):
                 section_lines = [line.strip()]
                 for j in range(1, max_lines + 1):
                     if i + j < len(lines):
@@ -116,9 +115,6 @@ class PitchDeckParser:
         for word, tag in tagged_words:
             if tag.startswith(('NN', 'JJ')):
                 current_phrase.append(word)
-                if len(current_phrase) >= 3:
-                    phrases.append(' '.join(current_phrase))
-                    current_phrase = []
             else:
                 if current_phrase and len(current_phrase) > 1:
                     phrases.append(' '.join(current_phrase))
@@ -127,9 +123,9 @@ class PitchDeckParser:
             phrases.append(' '.join(current_phrase))
 
         phrase_counts = Counter(phrases)
-        key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1 and count > 1]
-        if not key_phrases:
-            key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1]
+        phrase_scores = {phrase: count * len(phrase.split()) for phrase, count in phrase_counts.items() if len(phrase.split()) > 1}
+        sorted_phrases = sorted(phrase_scores.items(), key=lambda x: x[1], reverse=True)
+        key_phrases = [phrase for phrase, score in sorted_phrases[:top_n]]
         return key_phrases if key_phrases else ["No key phrases identified"]
 
     def extract_summary(self, text, max_sentences=3):
@@ -154,6 +150,8 @@ class PitchDeckParser:
         return ' '.join(top_sentences).strip()
 
     def analyze_content(self, text):
+        # Normalize whitespace in the input text
+        text = re.sub(r'\s+', ' ', text).strip()
         info = {
             'upload_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'word_count': len(text.split()),
