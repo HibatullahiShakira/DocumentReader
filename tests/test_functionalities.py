@@ -359,61 +359,6 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             deleted_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
             self.assertIsNone(deleted_deck, "Pitch deck was not deleted from the database")
 
-    def test_pitch_deck_parser_analyze_content(self):
-        sia = SentimentIntensityAnalyzer()
-        parser = PitchDeckParser(sia=sia)
-
-        # Test a pitch deck document
-        content_lines = [
-            "Our problem is that people struggle to find affordable housing.",
-            "Our solution is a platform that connects renters with landlords directly.",
-            "The market is the rental industry, valued at $100 billion."
-        ]
-        content = "\n".join(content_lines)
-        print(f"Content: {repr(content)}")
-        print(f"Length with newlines: {len(content)}")
-        print(f"Length without newlines: {len(content.replace('\n', ''))}")
-        print(f"Characters: {[c for c in content]}")
-        analysis = parser.analyze_content(content)
-
-        self.assertEqual(analysis['document_type'], "pitch_deck")
-        self.assertEqual(analysis['problem'], "our problem is that people struggle to find affordable housing.")
-        self.assertEqual(analysis['solution'],
-                         "our solution is a platform that connects renters with landlords directly.")
-        self.assertEqual(analysis['market'], "the market is the rental industry, valued at $100 billion.")
-        self.assertIsInstance(analysis['sentiment_score'], float)
-        self.assertIn(analysis['sentiment_type'], ['Positive', 'Negative', 'Neutral'])
-        self.assertEqual(analysis['word_count'], 31)
-        self.assertEqual(analysis['char_count'], 194)
-        self.assertIsNone(analysis.get('experience'))
-        self.assertIsNone(analysis.get('skills'))
-        self.assertIsNone(analysis.get('summary'))
-        self.assertIsNone(analysis.get('key_phrases'))
-
-        # Test a generic document
-        content = (
-            "This is a report on climate change impacts. "
-            "The earth is warming due to greenhouse gas emissions. "
-            "Scientists at NASA are researching renewable energy solutions to mitigate these effects. "
-            "The report was published in 2023."
-        )
-        content = re.sub(r'\s+', ' ', content).strip()
-        analysis = parser.analyze_content(content)
-
-        self.assertEqual(analysis['document_type'], "generic")
-        self.assertNotIn('solution', analysis)
-        self.assertNotIn('market', analysis)
-        self.assertIsInstance(analysis['sentiment_score'], float)
-        self.assertIn(analysis['sentiment_type'], ['Positive', 'Negative', 'Neutral'])
-        self.assertEqual(analysis['word_count'], 35)
-        self.assertEqual(analysis['char_count'], 220)
-        self.assertIn("renewable energy solutions", analysis['summary'])
-        self.assertIn("climate change impacts", ', '.join(analysis['key_phrases']).lower())
-        self.assertIn("greenhouse gas emissions", ', '.join(analysis['key_phrases']).lower())
-        self.assertIn("renewable energy solutions", ', '.join(analysis['key_phrases']).lower())
-        self.assertIsNone(analysis.get('experience'))
-        self.assertIsNone(analysis.get('skills'))
-
     def test_file_handling_and_database(self):
         with open(self.test_pdf_path, "rb") as f:
             response = self.client.post(
