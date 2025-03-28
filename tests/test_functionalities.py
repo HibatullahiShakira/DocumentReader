@@ -1,270 +1,457 @@
-import pdfplumber
-import pptx
+import unittest
+import os
+import redis
+import json
 import re
+from app.app import create_app
+from app.models import db, PitchDeck, PitchDeckParser
 from nltk.sentiment import SentimentIntensityAnalyzer
-from nltk.tokenize import word_tokenize, sent_tokenize
-from nltk.corpus import stopwords
-from nltk.tag import pos_tag
-import nltk
-from collections import Counter
-from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, UTC
 
-nltk.download('punkt')
-nltk.download('punkt_tab')
-nltk.download('averaged_perceptron_tagger')
-nltk.download('averaged_perceptron_tagger_eng')
-nltk.download('stopwords')
-nltk.download('vader_lexicon')
+class TestPitchDeckFunctionalities(unittest.TestCase):
+    def setUp(self):
+        self.app = create_app()
+        self.app.config.from_object('app.config.TestingConfig')
+        self.client = self.app.test_client()
 
-db = SQLAlchemy()
+        with self.app.app_context():
+            try:
+                db.drop_all()
+                db.create_all()
+            except Exception as e:
+                self.fail(f"Failed to initialize database: {e}")
 
-class PitchDeckParser:
-    def __init__(self, sia=None):
-        self.sia = sia if sia else SentimentIntensityAnalyzer()
-        self.stop_words = set(stopwords.words('english'))
-
-    def parse_pdf(self, file_path):
         try:
-            with pdfplumber.open(file_path) as pdf:
-                content = ""
-                for page in pdf.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        page_text = re.sub(r'\s+', ' ', page_text.strip())
-                        content += page_text + "\n"
-                content = content.rstrip()
-                return content, len(pdf.pages)
-        except Exception as e:
-            print(f"PDF parsing error: {e}")
-            raise
+            self.redis_client = redis.Redis(
+                host=self.app.config['REDIS_HOST'],
+                port=self.app.config['REDIS_PORT'],
+                db=self.app.config['REDIS_DB'],
+                decode_responses=True
+            )
+            self.redis_client.ping()
+        except redis.ConnectionError as e:
+            self.fail(f"Failed to connect to Redis: {e}")
+        self.redis_client.flushdb()
 
-    def parse_pptx(self, file_path):
-        try:
-            prs = pptx.Presentation(file_path)
-            content = ""
-            for slide in prs.slides:
-                for shape in slide.shapes:
-                    if hasattr(shape, "text"):
-                        content += shape.text + "\n"
-            return content, len(prs.slides)
-        except Exception as e:
-            print(f"PPTX parsing error: {e}")
-            raise
+        self.test_pdf_path = os.path.join(self.app.config['UPLOAD_FOLDER'], "Data Engineer.pdf")
+        print(f"Looking for Data Engineer.pdf at: {self.test_pdf_path}")
+        if not os.path.exists(self.test_pdf_path):
+            self.fail(f"Test PDF file not found at {self.test_pdf_path}.")
 
-    def detect_document_type(self, text):
-        text_lower = text.lower()
-        pitch_deck_patterns = [
-            r'our problem is\s+[^.\n]+',
-            r'our solution is\s+[^.\n]+',
-            r'the market is\s+[^.\n]+',
-            r'problem is\s+[^.\n]+',
-            r'solution is\s+[^.\n]+'
-        ]
-        for pattern in pitch_deck_patterns:
-            if re.search(pattern, text_lower):
-                print(f"Found pitch deck pattern: {pattern}")
-                return 'pitch_deck'
+        self.test_pptx_path = os.path.join(self.app.config['UPLOAD_FOLDER'], "test.pptx")
+        with open(self.test_pptx_path, "wb") as f:
+            f.write(b"Placeholder PPTX content")
 
-        personal_sections = ['objective', 'summary', 'profile']
-        other_sections = ['experience', 'education', 'skills', 'certifications']
-        has_personal_section = False
-        has_other_section = False
+        self.test_generic_pdf_path = os.path.join(self.app.config['UPLOAD_FOLDER'], "Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf")
+        print(f"Looking for Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf at: {self.test_generic_pdf_path}")
+        if not os.path.exists(self.test_generic_pdf_path):
+            self.fail(f"Test PDF file not found at {self.test_generic_pdf_path}.")
 
-        for keyword in personal_sections:
-            if re.search(rf'(?i)\b{keyword}\b(?:\s*$|\s+.*$)', text_lower, re.MULTILINE):
-                print(f"Found personal section: {keyword}")
-                has_personal_section = True
-                break
+    def tearDown(self):
+        with self.app.app_context():
+            try:
+                db.session.remove()
+                db.drop_all()
+            except Exception as e:
+                print(f"Warning: Failed to drop database: {e}")
+        self.redis_client.flushdb()
+        if os.path.exists(self.test_pptx_path):
+            os.remove(self.test_pptx_path)
 
-        for keyword in other_sections:
-            if re.search(rf'(?i)\b{keyword}(?:\s*(?:&.*)?(?:\s*$|\s+.*$))', text_lower, re.MULTILINE):
-                print(f"Found other section: {keyword}")
-                has_other_section = True
-                break
+    def test_upload_endpoint_no_file(self):
+        response = self.client.post('/api/upload')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json, {'error': 'No file provided'})
 
-        print(f"has_personal_section: {has_personal_section}, has_other_section: {has_other_section}")
-        if has_personal_section and has_other_section:
-            return 'resume'
+        with self.app.app_context():
+            pitch_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
+            self.assertIsNone(pitch_deck, "A pitch deck was unexpectedly saved to the database")
 
-        return 'generic'
+    def test_upload_endpoint_invalid_file(self):
+        with open("test.txt", "w") as f:
+            f.write("Invalid file")
+        with open("test.txt", "rb") as f:
+            response = self.client.post(
+                '/api/upload',
+                content_type='multipart/form-data',
+                data={'file': (f, 'test.txt')}
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json, {'error': 'Unsupported file format'})
 
-    def extract_section(self, lines, start_keyword, max_lines=10):
-        for i, line in enumerate(lines):
-            line_lower = line.lower().strip()
-            if re.search(rf'(?i)\b{start_keyword}(?:\s*(?:&.*)?(?:\s*:.*|\s+.*)?$)', line_lower):
-                section_lines = [line.strip()]
-                for j in range(1, max_lines + 1):
-                    if i + j < len(lines):
-                        next_line = lines[i + j].strip()
-                        next_line_lower = next_line.lower()
-                        if not next_line or next_line_lower.startswith(('objective', 'summary', 'profile', 'experience', 'skills', 'education', 'certifications')):
-                            break
-                        section_lines.append(next_line)
-                    else:
-                        break
-                return re.sub(r'\s+', ' ', ' '.join(section_lines))
-            if start_keyword == 'experience':
-                if re.search(r'(?i)[a-z\s&-]+(?:intern|engineer|developer|analyst|manager|specialist)(?:\s*:.*|\s+.*)?$', line_lower):
-                    section_lines = [line.strip()]
-                    for j in range(1, max_lines + 1):
-                        if i + j < len(lines):
-                            next_line = lines[i + j].strip()
-                            next_line_lower = next_line.lower()
-                            if not next_line or next_line_lower.startswith(('objective', 'summary', 'profile', 'experience', 'skills', 'education', 'certifications')):
-                                break
-                            section_lines.append(next_line)
-                        else:
-                            break
-                    return re.sub(r'\s+', ' ', ' '.join(section_lines))
-        return None
+        with self.app.app_context():
+            pitch_deck = PitchDeck.query.filter_by(filename="test.txt").first()
+            self.assertIsNone(pitch_deck, "A pitch deck was unexpectedly saved to the database")
+        os.remove("test.txt")
 
-    def extract_key_phrases(self, text, top_n=5):
-        words = word_tokenize(text.lower())
-        words = [word for word in words if word.isalnum() or '-' in word]
-        words = [word for word in words if word not in self.stop_words]
-        tagged_words = pos_tag(words)
-        phrases = []
-        current_phrase = []
+    def test_upload_endpoint_valid_pdf_file(self):
+        with open(self.test_pdf_path, "rb") as f:
+            response = self.client.post(
+                '/api/upload',
+                content_type='multipart/form-data',
+                data={'file': (f, 'Data Engineer.pdf')}
+            )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json, {
+            'message': 'File queued for processing',
+            'filename': 'Data_Engineer.pdf'
+        })
 
-        for word, tag in tagged_words:
-            if tag.startswith(('NN', 'JJ')) or '-' in word:
-                current_phrase.append(word)
-            else:
-                if current_phrase:
-                    # Generate phrases of length 2 and 3
-                    for length in range(2, 4):  # 2 to 3 words
-                        for start in range(len(current_phrase) - length + 1):
-                            if start + length <= len(current_phrase):
-                                phrase = ' '.join(current_phrase[start:start + length])
-                                phrases.append(phrase)
-                current_phrase = []
+        job = self.redis_client.lpop("processing_queue")
+        self.assertIsNotNone(job, "No job was added to the queue")
+        job_data = json.loads(job)
+        self.assertEqual(job_data["filename"], "Data_Engineer.pdf", "Job filename mismatch")
+        self.assertEqual(job_data["file_path"], os.path.join(self.app.config['UPLOAD_FOLDER'], "Data_Engineer.pdf"))
 
-        # Handle the last phrase
-        if current_phrase:
-            for length in range(2, 4):
-                for start in range(len(current_phrase) - length + 1):
-                    if start + length <= len(current_phrase):
-                        phrase = ' '.join(current_phrase[start:start + length])
-                        phrases.append(phrase)
+        self.assertTrue(os.path.exists(self.test_pdf_path), f"File was not found at {self.test_pdf_path}")
 
-        # Count phrases and select top ones
-        phrase_counts = Counter(phrases)
-        # Sort by count (descending), then by length (descending), then alphabetically
-        sorted_phrases = sorted(
-            phrase_counts.items(),
-            key=lambda x: (-x[1], -len(x[0].split()), x[0])
-        )
-        key_phrases = [phrase for phrase, count in sorted_phrases[:top_n] if len(phrase.split()) > 1]
-        return key_phrases if key_phrases else ["No key phrases identified"]
+        with self.app.app_context():
+            pitch_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
+            self.assertIsNone(pitch_deck, "A pitch deck was unexpectedly saved to the database")
 
-    def extract_summary(self, text, max_sentences=3):
-        sentences = sent_tokenize(text.strip())
-        if not sentences:
-            return "No content to summarize."
+    def test_upload_endpoint_valid_pptx_file(self):
+        with open(self.test_pptx_path, "rb") as f:
+            response = self.client.post(
+                '/api/upload',
+                content_type='multipart/form-data',
+                data={'file': (f, 'test.pptx')}
+            )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json, {
+            'message': 'File queued for processing',
+            'filename': 'test.pptx'
+        })
 
-        key_phrases = self.extract_key_phrases(text, top_n=5)
-        if not key_phrases or key_phrases == ["No key phrases identified"]:
-            return ' '.join(sentences[:max_sentences]).strip()
+        job = self.redis_client.lpop("processing_queue")
+        self.assertIsNotNone(job, "No job was added to the queue")
+        job_data = json.loads(job)
+        self.assertEqual(job_data["filename"], "test.pptx", "Job filename mismatch")
+        self.assertEqual(job_data["file_path"], os.path.join(self.app.config['UPLOAD_FOLDER'], "test.pptx"))
 
-        sentence_scores = []
-        for sentence in sentences:
-            score = sum(1 for phrase in key_phrases if phrase.lower() in sentence.lower())
-            sentence_scores.append((sentence, score))
+        self.assertTrue(os.path.exists(self.test_pptx_path), f"File was not saved to {self.test_pptx_path}")
 
-        sentence_scores.sort(key=lambda x: (-x[1], sentences.index(x[0])))
-        top_sentences = [sentence for sentence, score in sentence_scores[:max_sentences]]
-        return ' '.join(top_sentences).strip()
-
-    def analyze_content(self, text):
-        info = {
-            'upload_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'word_count': len(text.split()),
-            'char_count': len(text.replace('\n', ''))
+    def test_worker_processing_pdf(self):
+        job = {
+            'file_path': self.test_pdf_path,
+            'filename': 'Data Engineer.pdf',
+            'timestamp': '2023-01-01T00:00:00'
         }
-        sentiment = self.sia.polarity_scores(text)
-        info['sentiment_score'] = sentiment['compound']
-        info['sentiment_type'] = 'Positive' if sentiment['compound'] > 0.05 else \
-            'Negative' if sentiment['compound'] < -0.05 else 'Neutral'
+        self.redis_client.lpush('processing_queue', json.dumps(job))
 
-        doc_type = self.detect_document_type(text.lower())
-        info['document_type'] = doc_type
-        lines = text.lower().split('\n')
+        sia = SentimentIntensityAnalyzer()
+        parser = PitchDeckParser(sia=sia)
 
-        if doc_type == 'pitch_deck':
-            for line in lines:
-                if 'problem' in line:
-                    info['problem'] = line.strip()
-                elif 'solution' in line:
-                    info['solution'] = line.strip()
-                elif 'market' in line:
-                    info['market'] = line.strip()
-        elif doc_type == 'resume':
-            info['problem'] = self.extract_section(lines, 'objective') or \
-                              self.extract_section(lines, 'summary') or \
-                              self.extract_section(lines, 'profile')
-            info['experience'] = self.extract_section(lines, 'experience')
-            info['skills'] = self.extract_section(lines, 'skills')
-        else:
-            info['key_phrases'] = self.extract_key_phrases(text, top_n=5)
-            info['summary'] = self.extract_summary(text)
+        content, slide_count = parser.parse_pdf(self.test_pdf_path)
+        print(f"Content of Data Engineer.pdf:\n{content}")
+        analysis = parser.analyze_content(content)
 
-        if 'problem' not in info or not info['problem']:
-            info['problem'] = self.extract_summary(text)
+        print(f"Extracted experience: {analysis.get('experience')}")
+        print(f"Extracted skills: {analysis.get('skills')}")
 
-        return info
+        with self.app.app_context():
+            pitch_deck = PitchDeck(
+                filename="Data Engineer.pdf",
+                content=content,
+                slide_count=slide_count,
+                analysis=analysis,
+                status="processed"
+            )
+            pitch_deck.save(self.redis_client)
 
-class PitchDeck(db.Model):
-    __tablename__ = 'pitch_decks'
+        with self.app.app_context():
+            pitch_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
+            self.assertIsNotNone(pitch_deck, "Pitch deck was not saved to the database")
+            self.assertEqual(pitch_deck.filename, "Data Engineer.pdf")
+            self.assertEqual(pitch_deck.document_type, "resume")
+            normalized_content = re.sub(r'\s+', ' ', pitch_deck.content)
+            self.assertIn("Shakira Hibatullahi", normalized_content)
+            self.assertIn("Aspiring Data Engineer Intern", normalized_content)
+            self.assertIsInstance(pitch_deck.slide_count, int)
+            self.assertGreater(pitch_deck.slide_count, 0)
+            self.assertEqual(pitch_deck.word_count, len(content.split()))
+            self.assertEqual(pitch_deck.char_count, len(content.replace('\n', '')))
+            self.assertEqual(pitch_deck.status, "processed")
+            self.assertIsInstance(pitch_deck.sentiment_score, float)
+            self.assertIn(pitch_deck.sentiment_type, ['Positive', 'Negative', 'Neutral'])
+            self.assertIn("aspiring data engineer intern", pitch_deck.problem.lower())
+            self.assertIn("data engineering & analytics intern", pitch_deck.experience.lower())
+            self.assertIn("programming: python, sql, nosql", pitch_deck.skills.lower())
+            self.assertIsNone(pitch_deck.solution)
+            self.assertIsNone(pitch_deck.market)
+            self.assertIsNone(pitch_deck.summary)
+            self.assertIsNone(pitch_deck.key_phrases)
 
-    id = db.Column(db.Integer, primary_key=True)
-    filename = db.Column(db.String(255), nullable=False)
-    upload_date = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
-    content = db.Column(db.Text)
-    slide_count = db.Column(db.Integer)
-    status = db.Column(db.String(50))
-    word_count = db.Column(db.Integer)
-    char_count = db.Column(db.Integer)
-    sentiment_score = db.Column(db.Float)
-    sentiment_type = db.Column(db.String(50))
-    document_type = db.Column(db.String(50))
-    problem = db.Column(db.Text)
-    solution = db.Column(db.Text)
-    market = db.Column(db.Text)
-    experience = db.Column(db.Text)
-    skills = db.Column(db.Text)
-    summary = db.Column(db.Text)
-    key_phrases = db.Column(db.Text)
+        self.assertIsNone(self.redis_client.get('dashboard_data'), "Redis cache was not invalidated")
 
-    def __init__(self, filename, content, slide_count, analysis, status='processed'):
-        self.filename = filename
-        self.content = content
-        self.slide_count = slide_count
-        self.status = status
-        self.analysis = analysis
-        self.word_count = analysis['word_count']
-        self.char_count = analysis['char_count']
-        self.sentiment_score = analysis['sentiment_score']
-        self.sentiment_type = analysis['sentiment_type']
-        self.document_type = analysis.get('document_type')
-        self.problem = analysis.get('problem')
-        self.solution = analysis.get('solution')
-        self.market = analysis.get('market')
-        self.experience = analysis.get('experience')
-        self.skills = analysis.get('skills')
-        self.summary = analysis.get('summary')
-        self.key_phrases = ', '.join(analysis.get('key_phrases', [])) if analysis.get('key_phrases') else None
-        upload_date_str = analysis.get('upload_date')
-        if upload_date_str:
-            self.upload_date = datetime.strptime(upload_date_str, "%Y-%m-%d %H:%M:%S")
+    def test_worker_processing_generic_pdf(self):
+        job = {
+            'file_path': self.test_generic_pdf_path,
+            'filename': 'Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf',
+            'timestamp': '2023-01-01T00:00:00'
+        }
+        self.redis_client.lpush('processing_queue', json.dumps(job))
 
-    def save(self, redis_client):
-        try:
-            db.session.add(self)
+        sia = SentimentIntensityAnalyzer()
+        parser = PitchDeckParser(sia=sia)
+
+        content, slide_count = parser.parse_pdf(self.test_generic_pdf_path)
+        print(f"Content of Full-Stack Developer PDF:\n{content}")
+        print(f"Content length with newlines: {len(content)}")
+        print(f"Content length without newlines: {len(content.replace('\n', ''))}")
+        analysis = parser.analyze_content(content)
+        print(f"Analysis:\n{analysis}")
+
+        with self.app.app_context():
+            pitch_deck = PitchDeck(
+                filename="Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf",
+                content=content,
+                slide_count=slide_count,
+                analysis=analysis,
+                status="processed"
+            )
+            pitch_deck.save(self.redis_client)
+
+        with self.app.app_context():
+            pitch_deck = PitchDeck.query.filter_by(filename="Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf").first()
+            self.assertIsNotNone(pitch_deck, "Pitch deck was not saved to the database")
+            self.assertEqual(pitch_deck.filename, "Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf")
+            self.assertEqual(pitch_deck.document_type, "generic")
+            self.assertIsInstance(pitch_deck.slide_count, int)
+            self.assertGreater(pitch_deck.slide_count, 0)
+            self.assertEqual(pitch_deck.word_count, len(content.split()))
+            self.assertEqual(pitch_deck.char_count, len(content.replace('\n', '')))
+            self.assertEqual(pitch_deck.status, "processed")
+            self.assertIsInstance(pitch_deck.sentiment_score, float)
+            self.assertIn(pitch_deck.sentiment_type, ['Positive', 'Negative', 'Neutral'])
+            print(f"Problem: {pitch_deck.problem}")
+            print(f"Summary: {pitch_deck.summary}")
+            print(f"Key Phrases: {pitch_deck.key_phrases}")
+            self.assertIn("full-stack developer", pitch_deck.summary.lower())
+            self.assertIn("full-stack developer", pitch_deck.key_phrases.lower())
+            self.assertIsNone(pitch_deck.solution)
+            self.assertIsNone(pitch_deck.market)
+            self.assertIsNone(pitch_deck.experience)
+            self.assertIsNone(pitch_deck.skills)
+
+        self.assertIsNone(self.redis_client.get('dashboard_data'), "Redis cache was not invalidated")
+
+    def test_database_save_and_retrieve(self):
+        analysis = {
+            'word_count': 2,
+            'char_count': 12,
+            'sentiment_score': 0.5,
+            'sentiment_type': 'Positive',
+            'document_type': 'pitch_deck',
+            'problem': 'Test problem',
+            'solution': 'Test solution',
+            'market': 'Test market'
+        }
+        with self.app.app_context():
+            pitch_deck = PitchDeck(
+                filename="Data Engineer.pdf",
+                content="Test content",
+                slide_count=5,
+                analysis=analysis,
+                status="processed"
+            )
+            pitch_deck.save(self.redis_client)
+
+            retrieved_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
+            self.assertIsNotNone(retrieved_deck)
+            self.assertEqual(retrieved_deck.filename, "Data Engineer.pdf")
+            self.assertEqual(retrieved_deck.content, "Test content")
+            self.assertEqual(retrieved_deck.slide_count, 5)
+            self.assertEqual(retrieved_deck.word_count, 2)
+            self.assertEqual(retrieved_deck.char_count, 12)
+            self.assertEqual(retrieved_deck.sentiment_score, 0.5)
+            self.assertEqual(retrieved_deck.sentiment_type, "Positive")
+            self.assertEqual(retrieved_deck.document_type, "pitch_deck")
+            self.assertEqual(retrieved_deck.problem, "Test problem")
+            self.assertEqual(retrieved_deck.solution, "Test solution")
+            self.assertEqual(retrieved_deck.market, "Test market")
+            self.assertEqual(retrieved_deck.status, "processed")
+            self.assertIsNone(retrieved_deck.experience)
+            self.assertIsNone(retrieved_deck.skills)
+            self.assertIsNone(retrieved_deck.summary)
+            self.assertIsNone(retrieved_deck.key_phrases)
+
+    def test_database_update(self):
+        analysis = {
+            'word_count': 2,
+            'char_count': 12,
+            'sentiment_score': 0.0,
+            'sentiment_type': 'Neutral',
+            'document_type': 'pitch_deck',
+            'problem': 'Initial problem',
+            'solution': 'Initial solution',
+            'market': 'Initial market'
+        }
+        with self.app.app_context():
+            pitch_deck = PitchDeck(
+                filename="Data Engineer.pdf",
+                content="Initial content",
+                slide_count=3,
+                analysis=analysis,
+                status="pending"
+            )
+            pitch_deck.save(self.redis_client)
+
+            updated_analysis = {
+                'word_count': 3,
+                'char_count': 15,
+                'sentiment_score': 0.6,
+                'sentiment_type': 'Positive',
+                'document_type': 'pitch_deck',
+                'problem': 'Updated problem',
+                'solution': 'Updated solution',
+                'market': 'Updated market'
+            }
+            pitch_deck.content = "Updated content"
+            pitch_deck.slide_count = 5
+            pitch_deck.status = "processed"
+            pitch_deck.word_count = updated_analysis['word_count']
+            pitch_deck.char_count = updated_analysis['char_count']
+            pitch_deck.sentiment_score = updated_analysis['sentiment_score']
+            pitch_deck.sentiment_type = updated_analysis['sentiment_type']
+            pitch_deck.document_type = updated_analysis['document_type']
+            pitch_deck.problem = updated_analysis['problem']
+            pitch_deck.solution = updated_analysis['solution']
+            pitch_deck.market = updated_analysis['market']
+            pitch_deck.save(self.redis_client)
+
+            updated_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
+            self.assertIsNotNone(updated_deck)
+            self.assertEqual(updated_deck.content, "Updated content")
+            self.assertEqual(updated_deck.slide_count, 5)
+            self.assertEqual(updated_deck.word_count, 3)
+            self.assertEqual(updated_deck.char_count, 15)
+            self.assertEqual(updated_deck.sentiment_score, 0.6)
+            self.assertEqual(updated_deck.sentiment_type, "Positive")
+            self.assertEqual(updated_deck.document_type, "pitch_deck")
+            self.assertEqual(updated_deck.problem, "Updated problem")
+            self.assertEqual(updated_deck.solution, "Updated solution")
+            self.assertEqual(updated_deck.market, "Updated market")
+            self.assertEqual(updated_deck.status, "processed")
+
+    def test_database_delete(self):
+        analysis = {
+            'word_count': 2,
+            'char_count': 12,
+            'sentiment_score': 0.5,
+            'sentiment_type': 'Positive',
+            'document_type': 'pitch_deck',
+            'problem': 'Test problem',
+            'solution': 'Test solution',
+            'market': 'Test market'
+        }
+        with self.app.app_context():
+            pitch_deck = PitchDeck(
+                filename="Data Engineer.pdf",
+                content="Test content",
+                slide_count=5,
+                analysis=analysis,
+                status="processed"
+            )
+            pitch_deck.save(self.redis_client)
+
+            db.session.delete(pitch_deck)
             db.session.commit()
-            redis_client.delete('dashboard_data')
-            return self.id
-        except Exception as e:
-            db.session.rollback()
-            print(f"Database storage error: {e}")
-            raise
+
+            deleted_deck = PitchDeck.query.filter_by(filename="Data Engineer.pdf").first()
+            self.assertIsNone(deleted_deck, "Pitch deck was not deleted from the database")
+
+    def test_pitch_deck_parser_analyze_content(self):
+        sia = SentimentIntensityAnalyzer()
+        parser = PitchDeckParser(sia=sia)
+
+        # Test a pitch deck document
+        content_lines = [
+            "Our problem is that people struggle to find affordable housing.",
+            "Our solution is a platform that connects renters with landlords directly.",
+            "The market is the rental industry, valued at $100 billion."
+        ]
+        content = "\n".join(content_lines)
+        print(f"Content: {repr(content)}")
+        print(f"Length with newlines: {len(content)}")
+        print(f"Length without newlines: {len(content.replace('\n', ''))}")
+        print(f"Characters: {[c for c in content]}")
+        analysis = parser.analyze_content(content)
+
+        self.assertEqual(analysis['document_type'], "pitch_deck")
+        self.assertEqual(analysis['problem'], "our problem is that people struggle to find affordable housing.")
+        self.assertEqual(analysis['solution'],
+                         "our solution is a platform that connects renters with landlords directly.")
+        self.assertEqual(analysis['market'], "the market is the rental industry, valued at $100 billion.")
+        self.assertIsInstance(analysis['sentiment_score'], float)
+        self.assertIn(analysis['sentiment_type'], ['Positive', 'Negative', 'Neutral'])
+        self.assertEqual(analysis['word_count'], 31)
+        self.assertEqual(analysis['char_count'], 194)
+        self.assertIsNone(analysis.get('experience'))
+        self.assertIsNone(analysis.get('skills'))
+        self.assertIsNone(analysis.get('summary'))
+        self.assertIsNone(analysis.get('key_phrases'))
+
+        # Test a generic document
+        content = (
+            "This is a report on climate change impacts. "
+            "The earth is warming due to greenhouse gas emissions. "
+            "Scientists at NASA are researching renewable energy solutions to mitigate these effects. "
+            "The report was published in 2023."
+        )
+        content = re.sub(r'\s+', ' ', content).strip()
+        analysis = parser.analyze_content(content)
+
+        self.assertEqual(analysis['document_type'], "generic")
+        self.assertNotIn('solution', analysis)
+        self.assertNotIn('market', analysis)
+        self.assertIsInstance(analysis['sentiment_score'], float)
+        self.assertIn(analysis['sentiment_type'], ['Positive', 'Negative', 'Neutral'])
+        self.assertEqual(analysis['word_count'], 35)
+        self.assertEqual(analysis['char_count'], 220)
+        self.assertIn("renewable energy solutions", analysis['summary'])
+        self.assertIn("climate change impacts", ', '.join(analysis['key_phrases']).lower())
+        self.assertIn("greenhouse gas emissions", ', '.join(analysis['key_phrases']).lower())
+        self.assertIn("renewable energy solutions", ', '.join(analysis['key_phrases']).lower())
+        self.assertIsNone(analysis.get('experience'))
+        self.assertIsNone(analysis.get('skills'))
+
+    def test_file_handling_and_database(self):
+        with open(self.test_pdf_path, "rb") as f:
+            response = self.client.post(
+                '/api/upload',
+                content_type='multipart/form-data',
+                data={'file': (f, 'Data Engineer.pdf')}
+            )
+        self.assertEqual(response.status_code, 202)
+
+        job = self.redis_client.lpop("processing_queue")
+        job_data = json.loads(job)
+
+        sia = SentimentIntensityAnalyzer()
+        parser = PitchDeckParser(sia=sia)
+        content, slide_count = parser.parse_pdf(job_data['file_path'])
+        analysis = parser.analyze_content(content)
+
+        with self.app.app_context():
+            pitch_deck = PitchDeck(
+                filename=job_data['filename'],
+                content=content,
+                slide_count=slide_count,
+                analysis=analysis,
+                status="processed"
+            )
+            pitch_deck.save(self.redis_client)
+
+        with self.app.app_context():
+            pitch_deck = PitchDeck.query.filter_by(filename="Data_Engineer.pdf").first()
+            self.assertIsNotNone(pitch_deck, "Pitch deck was not saved to the database")
+            self.assertEqual(pitch_deck.status, "processed")
+            self.assertEqual(pitch_deck.document_type, "resume")
+            self.assertIn("Shakira Hibatullahi", re.sub(r'\s+', ' ', pitch_deck.content))
+            self.assertIn("Aspiring Data Engineer Intern", re.sub(r'\s+', ' ', pitch_deck.content))
+            self.assertIsInstance(pitch_deck.slide_count, int)
+            self.assertGreater(pitch_deck.slide_count, 0)
+            self.assertEqual(pitch_deck.word_count, len(content.split()))
+            self.assertEqual(pitch_deck.char_count, len(content.replace('\n', '')))
+
+if __name__ == "__main__":
+    unittest.main()
