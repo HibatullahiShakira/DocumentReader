@@ -7,7 +7,6 @@ from app.app import create_app
 from app.models import db, PitchDeck, PitchDeckParser
 from nltk.sentiment import SentimentIntensityAnalyzer
 
-
 class TestPitchDeckFunctionalities(unittest.TestCase):
     def setUp(self):
         self.app = create_app()
@@ -42,10 +41,8 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         with open(self.test_pptx_path, "wb") as f:
             f.write(b"Placeholder PPTX content")
 
-        self.test_generic_pdf_path = os.path.join(self.app.config['UPLOAD_FOLDER'],
-                                                  "Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf")
-        print(
-            f"Looking for Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf at: {self.test_generic_pdf_path}")
+        self.test_generic_pdf_path = os.path.join(self.app.config['UPLOAD_FOLDER'], "Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf")
+        print(f"Looking for Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf at: {self.test_generic_pdf_path}")
         if not os.path.exists(self.test_generic_pdf_path):
             self.fail(f"Test PDF file not found at {self.test_generic_pdf_path}.")
 
@@ -144,7 +141,10 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         parser = PitchDeckParser(sia=sia)
 
         content, slide_count = parser.parse_pdf(self.test_pdf_path)
+        print(f"Content of Data Engineer.pdf:\n{content}")
         analysis = parser.analyze_content(content)
+
+        print(f"Extracted experience: {analysis.get('experience')}")
 
         with self.app.app_context():
             pitch_deck = PitchDeck(
@@ -193,7 +193,9 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
         parser = PitchDeckParser(sia=sia)
 
         content, slide_count = parser.parse_pdf(self.test_generic_pdf_path)
+        print(f"Content of Full-Stack Developer PDF:\n{content}")
         analysis = parser.analyze_content(content)
+        print(f"Analysis:\n{analysis}")
 
         with self.app.app_context():
             pitch_deck = PitchDeck(
@@ -206,8 +208,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             pitch_deck.save(self.redis_client)
 
         with self.app.app_context():
-            pitch_deck = PitchDeck.query.filter_by(
-                filename="Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf").first()
+            pitch_deck = PitchDeck.query.filter_by(filename="Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf").first()
             self.assertIsNotNone(pitch_deck, "Pitch deck was not saved to the database")
             self.assertEqual(pitch_deck.filename, "Full-Stack Developer (Backend Specialist) - Mar 2025 (2).pdf")
             self.assertEqual(pitch_deck.document_type, "generic")
@@ -218,6 +219,9 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             self.assertEqual(pitch_deck.status, "processed")
             self.assertIsInstance(pitch_deck.sentiment_score, float)
             self.assertIn(pitch_deck.sentiment_type, ['Positive', 'Negative', 'Neutral'])
+            print(f"Problem: {pitch_deck.problem}")
+            print(f"Summary: {pitch_deck.summary}")
+            print(f"Key Phrases: {pitch_deck.key_phrases}")
             self.assertIn("full stack developer", pitch_deck.problem.lower())
             self.assertIn("full stack developer", pitch_deck.summary.lower())
             self.assertIn("web application", pitch_deck.summary.lower())
@@ -362,6 +366,9 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
 
         # Test a pitch deck document
         content = "Our problem is that people struggle to find affordable housing.\nOur solution is a platform that connects renters with landlords directly.\nThe market is the rental industry, valued at $100 billion."
+        print(f"Content: {repr(content)}")
+        print(f"Length with newlines: {len(content)}")
+        print(f"Length without newlines: {len(content.replace('\n', ''))}")
         analysis = parser.analyze_content(content)
 
         self.assertEqual(analysis['document_type'], "pitch_deck")
@@ -440,7 +447,6 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
             self.assertGreater(pitch_deck.slide_count, 0)
             self.assertEqual(pitch_deck.word_count, len(content.split()))
             self.assertEqual(pitch_deck.char_count, len(content.replace('\n', '')))
-
 
 if __name__ == "__main__":
     unittest.main()

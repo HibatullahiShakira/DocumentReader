@@ -1,3 +1,4 @@
+import pdfplumber
 import pptx
 import pypdf
 import re
@@ -9,6 +10,7 @@ import nltk
 from collections import Counter
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, UTC
+
 
 nltk.download('punkt')
 nltk.download('punkt_tab')
@@ -26,14 +28,13 @@ class PitchDeckParser:
 
     def parse_pdf(self, file_path):
         try:
-            with open(file_path, 'rb') as file:
-                pdf_reader = pypdf.PdfReader(file)
+            with pdfplumber.open(file_path) as pdf:
                 content = ""
-                for page in pdf_reader.pages:
+                for page in pdf.pages:
                     page_text = page.extract_text().strip()
                     if page_text:
                         content += page_text + "\n"
-                return content.rstrip(), len(pdf_reader.pages)
+                return content.rstrip(), len(pdf.pages)
         except Exception as e:
             print(f"PDF parsing error: {e}")
             raise
@@ -57,16 +58,32 @@ class PitchDeckParser:
         if any(keyword in text_lower for keyword in pitch_deck_keywords):
             return 'pitch_deck'
 
-        resume_keywords = ['objective', 'summary', 'profile', 'experience', 'education', 'skills', 'certifications']
-        for keyword in resume_keywords:
+        personal_sections = ['objective', 'summary', 'profile']
+        other_sections = ['experience', 'education', 'skills', 'certifications']
+        has_personal_section = False
+        has_other_section = False
+
+        for keyword in personal_sections:
             if re.search(rf'^{keyword}\s*:|^\s*{keyword}\s*\n', text_lower, re.MULTILINE):
-                return 'resume'
+                print(f"Found personal section: {keyword}")
+                has_personal_section = True
+                break
+
+        for keyword in other_sections:
+            if re.search(rf'^{keyword}\s*:|^\s*{keyword}\s*\n', text_lower, re.MULTILINE):
+                print(f"Found other section: {keyword}")
+                has_other_section = True
+                break
+
+        print(f"has_personal_section: {has_personal_section}, has_other_section: {has_other_section}")
+        if has_personal_section and has_other_section:
+            return 'resume'
 
         return 'generic'
 
-    def extract_section(self, lines, start_keyword, max_lines=5):  # Increased max_lines
+    def extract_section(self, lines, start_keyword, max_lines=5):
         for i, line in enumerate(lines):
-            if start_keyword in line.lower():  # Case-insensitive match
+            if start_keyword in line.lower():
                 section_lines = [line.strip()]
                 for j in range(1, max_lines + 1):
                     if i + j < len(lines):
