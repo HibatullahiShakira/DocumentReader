@@ -30,10 +30,14 @@ class PitchDeckParser:
             with pdfplumber.open(file_path) as pdf:
                 content = ""
                 for page in pdf.pages:
-                    page_text = page.extract_text().strip()
+                    page_text = page.extract_text()
                     if page_text:
+                        # Normalize spaces and newlines within the page text
+                        page_text = re.sub(r'\s+', ' ', page_text.strip())
                         content += page_text + "\n"
-                return content.rstrip(), len(pdf.pages)
+                # Remove trailing newline
+                content = content.rstrip()
+                return content, len(pdf.pages)
         except Exception as e:
             print(f"PDF parsing error: {e}")
             raise
@@ -71,13 +75,13 @@ class PitchDeckParser:
         has_other_section = False
 
         for keyword in personal_sections:
-            if re.search(rf'^{keyword}\s*:|^\s*{keyword}\s*\n', text_lower, re.MULTILINE):
+            if re.search(rf'^{keyword}(?:\s*$|\s+.*$)', text_lower, re.MULTILINE):
                 print(f"Found personal section: {keyword}")
                 has_personal_section = True
                 break
 
         for keyword in other_sections:
-            if re.search(rf'^{keyword}\s*:|^\s*{keyword}\s*\n', text_lower, re.MULTILINE):
+            if re.search(rf'^{keyword}(?:\s*$|\s+.*$)', text_lower, re.MULTILINE):
                 print(f"Found other section: {keyword}")
                 has_other_section = True
                 break
@@ -91,8 +95,8 @@ class PitchDeckParser:
     def extract_section(self, lines, start_keyword, max_lines=10):
         for i, line in enumerate(lines):
             line_lower = line.lower().strip()
-            if (re.search(rf'\b{start_keyword}\b(?:\s*|\s+&.*|\s*:.*)$', line_lower) and
-                    not re.search(rf'\b{start_keyword}\b\s+[^&:].*', line_lower)):
+            if (re.match(rf'^{start_keyword}(?:\s*|\s+&.*|\s*:.*)$', line_lower) and
+                    not re.search(rf'^{start_keyword}\s+[^&:].*', line_lower)):
                 section_lines = [line.strip()]
                 for j in range(1, max_lines + 1):
                     if i + j < len(lines):
@@ -115,6 +119,9 @@ class PitchDeckParser:
         for word, tag in tagged_words:
             if tag.startswith(('NN', 'JJ')):
                 current_phrase.append(word)
+                if len(current_phrase) >= 3:
+                    phrases.append(' '.join(current_phrase))
+                    current_phrase = []
             else:
                 if current_phrase and len(current_phrase) > 1:
                     phrases.append(' '.join(current_phrase))
@@ -123,9 +130,9 @@ class PitchDeckParser:
             phrases.append(' '.join(current_phrase))
 
         phrase_counts = Counter(phrases)
-        phrase_scores = {phrase: count * len(phrase.split()) for phrase, count in phrase_counts.items() if len(phrase.split()) > 1}
-        sorted_phrases = sorted(phrase_scores.items(), key=lambda x: x[1], reverse=True)
-        key_phrases = [phrase for phrase, score in sorted_phrases[:top_n]]
+        key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1 and count > 1]
+        if not key_phrases:
+            key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1]
         return key_phrases if key_phrases else ["No key phrases identified"]
 
     def extract_summary(self, text, max_sentences=3):
@@ -150,8 +157,6 @@ class PitchDeckParser:
         return ' '.join(top_sentences).strip()
 
     def analyze_content(self, text):
-        # Normalize whitespace in the input text
-        text = re.sub(r'\s+', ' ', text).strip()
         info = {
             'upload_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'word_count': len(text.split()),
