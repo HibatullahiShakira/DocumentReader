@@ -1,3 +1,5 @@
+import pdfplumber
+import pptx
 import re
 from nltk.sentiment import SentimentIntensityAnalyzer
 from nltk.tokenize import word_tokenize, sent_tokenize
@@ -7,10 +9,7 @@ import nltk
 from collections import Counter
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, UTC
-import pdfplumber
-import pptx
 
-# Ensure required NLTK data is downloaded
 nltk.download('punkt')
 nltk.download('punkt_tab')
 nltk.download('averaged_perceptron_tagger')
@@ -73,13 +72,13 @@ class PitchDeckParser:
         has_other_section = False
 
         for keyword in personal_sections:
-            if re.search(rf'\b{keyword}\b(?:\s*$|\s+.*$)', text_lower, re.MULTILINE):
+            if re.search(rf'^{keyword}(?:\s*$|\s+.*$)', text_lower, re.MULTILINE):
                 print(f"Found personal section: {keyword}")
                 has_personal_section = True
                 break
 
         for keyword in other_sections:
-            if re.search(rf'\b{keyword}\b(?:\s*$|\s+.*$)', text_lower, re.MULTILINE):
+            if re.search(rf'^{keyword}(?:\s*$|\s+.*$)', text_lower, re.MULTILINE):
                 print(f"Found other section: {keyword}")
                 has_other_section = True
                 break
@@ -93,8 +92,7 @@ class PitchDeckParser:
     def extract_section(self, lines, start_keyword, max_lines=10):
         for i, line in enumerate(lines):
             line_lower = line.lower().strip()
-            if (re.match(rf'^{start_keyword}(?:\s*|\s+&.*|\s*:.*)$', line_lower) and
-                    not re.search(rf'^{start_keyword}\s+[^&:].*', line_lower)):
+            if re.match(rf'^{start_keyword}(?:\s*|\s*:.*|\s+.*)$', line_lower):
                 section_lines = [line.strip()]
                 for j in range(1, max_lines + 1):
                     if i + j < len(lines):
@@ -106,6 +104,19 @@ class PitchDeckParser:
                     else:
                         break
                 return re.sub(r'\s+', ' ', ' '.join(section_lines))
+            if start_keyword == 'experience':
+                if re.match(r'^[a-zA-Z\s&-]+(?:intern|engineer|developer|analyst|manager|specialist)(?:\s*|\s*:.*|\s+.*)$', line_lower):
+                    section_lines = [line.strip()]
+                    for j in range(1, max_lines + 1):
+                        if i + j < len(lines):
+                            next_line = lines[i + j].strip()
+                            next_line_lower = next_line.lower()
+                            if not next_line or next_line_lower.startswith(('objective', 'summary', 'profile', 'experience', 'skills', 'education', 'certifications')):
+                                break
+                            section_lines.append(next_line)
+                        else:
+                            break
+                    return re.sub(r'\s+', ' ', ' '.join(section_lines))
         return None
 
     def extract_key_phrases(self, text, top_n=5):
@@ -115,8 +126,11 @@ class PitchDeckParser:
         phrases = []
         current_phrase = []
         for word, tag in tagged_words:
-            if tag.startswith(('NN', 'JJ', 'VB')):
+            if tag.startswith(('NN', 'JJ')):
                 current_phrase.append(word)
+                if len(current_phrase) >= 3:
+                    phrases.append(' '.join(current_phrase))
+                    current_phrase = []
             else:
                 if current_phrase and len(current_phrase) > 1:
                     phrases.append(' '.join(current_phrase))
@@ -125,7 +139,9 @@ class PitchDeckParser:
             phrases.append(' '.join(current_phrase))
 
         phrase_counts = Counter(phrases)
-        key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1]
+        key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1 and count > 1]
+        if not key_phrases:
+            key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1]
         return key_phrases if key_phrases else ["No key phrases identified"]
 
     def extract_summary(self, text, max_sentences=3):
@@ -188,10 +204,14 @@ class PitchDeckParser:
         return info
 
 class PitchDeck(db.Model):
+    __tablename__ = 'pitch_decks'
+
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False)
-    content = db.Column(db.Text, nullable=False)
-    slide_count = db.Column(db.Integer, nullable=False)
+    upload_date = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
+    content = db.Column(db.Text)
+    slide_count = db.Column(db.Integer)
+    status = db.Column(db.String(50))
     word_count = db.Column(db.Integer)
     char_count = db.Column(db.Integer)
     sentiment_score = db.Column(db.Float)
@@ -204,33 +224,36 @@ class PitchDeck(db.Model):
     skills = db.Column(db.Text)
     summary = db.Column(db.Text)
     key_phrases = db.Column(db.Text)
-    status = db.Column(db.String(50), default='pending')
-    upload_date = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
 
-    def __init__(self, **kwargs):
-        # Initialize SQLAlchemy columns
-        for key, value in kwargs.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
-        # Store analysis as an instance attribute if provided
-        self.analysis = kwargs.get('analysis', {})
+    def __init__(self, filename, content, slide_count, analysis, status='processed'):
+        self.filename = filename
+        self.content = content
+        self.slide_count = slide_count
+        self.status = status
+        self.analysis = analysis
+        self.word_count = analysis['word_count']
+        self.char_count = analysis['char_count']
+        self.sentiment_score = analysis['sentiment_score']
+        self.sentiment_type = analysis['sentiment_type']
+        self.document_type = analysis.get('document_type')
+        self.problem = analysis.get('problem')
+        self.solution = analysis.get('solution')
+        self.market = analysis.get('market')
+        self.experience = analysis.get('experience')
+        self.skills = analysis.get('skills')
+        self.summary = analysis.get('summary')
+        self.key_phrases = ', '.join(analysis.get('key_phrases', [])) if analysis.get('key_phrases') else None
+        upload_date_str = analysis.get('upload_date')
+        if upload_date_str:
+            self.upload_date = datetime.strptime(upload_date_str, "%Y-%m-%d %H:%M:%S")
 
     def save(self, redis_client):
-        self.word_count = self.analysis.get('word_count')
-        self.char_count = self.analysis.get('char_count')
-        self.sentiment_score = self.analysis.get('sentiment_score')
-        self.sentiment_type = self.analysis.get('sentiment_type')
-        self.document_type = self.analysis.get('document_type')
-        self.problem = self.analysis.get('problem')
-        self.solution = self.analysis.get('solution')
-        self.market = self.analysis.get('market')
-        self.experience = self.analysis.get('experience')
-        self.skills = self.analysis.get('skills')
-        self.summary = self.analysis.get('summary')
-        self.key_phrases = ', '.join(self.analysis.get('key_phrases', [])) if self.analysis.get('key_phrases') else None
-        self.upload_date = datetime.strptime(self.analysis.get('upload_date'), "%Y-%m-%d %H:%M:%S")
-
-        db.session.add(self)
-        db.session.commit()
-
-        redis_client.delete('dashboard_data')
+        try:
+            db.session.add(self)
+            db.session.commit()
+            redis_client.delete('dashboard_data')
+            return self.id
+        except Exception as e:
+            db.session.rollback()
+            print(f"Database storage error: {e}")
+            raise
