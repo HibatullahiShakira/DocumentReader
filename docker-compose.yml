@@ -69,6 +69,7 @@ services:
         condition: service_healthy
     environment:
       - FLASK_ENV=testing
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@test-db:5432/documentreader_test
     env_file:
       - .env
     volumes:

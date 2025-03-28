@@ -4,6 +4,9 @@ import redis
 import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 from dotenv import load_dotenv
+import psycopg2
+from urllib.parse import urlparse
+from sqlalchemy import create_engine
 
 nltk.download('vader_lexicon')
 
@@ -40,6 +43,45 @@ def create_app():
 
     print("Starting Flask application")
 
+    db_uri = app.config.get('SQLALCHEMY_DATABASE_URI') or os.getenv('DATABASE_URL')
+    if not db_uri:
+        raise ValueError("DATABASE_URL or SQLALCHEMY_DATABASE_URI must be set")
+
+    db_url = urlparse(db_uri)
+    db_name = db_url.path[1:]  # Remove the leading '/'
+    db_user = db_url.username
+    db_pass = db_url.password
+    db_host = db_url.hostname
+    db_port = db_url.port
+
+    # Connect to PostgreSQL server (without specifying a database) to create the database
+    try:
+        conn = psycopg2.connect(
+            dbname='postgres',  # Connect to the default 'postgres' database
+            user=db_user,
+            password=db_pass,
+            host=db_host,
+            port=db_port
+        )
+        conn.autocommit = True
+        cursor = conn.cursor()
+
+        # Check if the database exists, and create it if it doesn't
+        cursor.execute(f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'")
+        exists = cursor.fetchone()
+        if not exists:
+            print(f"Creating database {db_name}")
+            cursor.execute(f"CREATE DATABASE {db_name}")
+        else:
+            print(f"Database {db_name} already exists")
+
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Failed to create database: {e}")
+        raise
+
+    # Initialize Flask-SQLAlchemy
     db.init_app(app)
 
     with app.app_context():
