@@ -19,6 +19,7 @@ nltk.download('vader_lexicon')
 
 db = SQLAlchemy()
 
+
 class PitchDeckParser:
     def __init__(self, sia=None):
         self.sia = sia if sia else SentimentIntensityAnalyzer()
@@ -98,20 +99,25 @@ class PitchDeckParser:
                     if i + j < len(lines):
                         next_line = lines[i + j].strip()
                         next_line_lower = next_line.lower()
-                        if not next_line or next_line_lower.startswith(('objective', 'summary', 'profile', 'experience', 'skills', 'education', 'certifications')):
+                        if not next_line or next_line_lower.startswith(('objective', 'summary', 'profile', 'experience',
+                                                                        'skills', 'education', 'certifications')):
                             break
                         section_lines.append(next_line)
                     else:
                         break
                 return re.sub(r'\s+', ' ', ' '.join(section_lines))
             if start_keyword == 'experience':
-                if re.search(r'(?i)[a-z\s&-]+(?:intern|engineer|developer|analyst|manager|specialist)(?:\s*:.*|\s+.*)?$', line_lower):
+                if re.search(
+                        r'(?i)[a-z\s&-]+(?:intern|engineer|developer|analyst|manager|specialist)(?:\s*:.*|\s+.*)?$',
+                        line_lower):
                     section_lines = [line.strip()]
                     for j in range(1, max_lines + 1):
                         if i + j < len(lines):
                             next_line = lines[i + j].strip()
                             next_line_lower = next_line.lower()
-                            if not next_line or next_line_lower.startswith(('objective', 'summary', 'profile', 'experience', 'skills', 'education', 'certifications')):
+                            if not next_line or next_line_lower.startswith(('objective', 'summary', 'profile',
+                                                                            'experience', 'skills', 'education',
+                                                                            'certifications')):
                                 break
                             section_lines.append(next_line)
                         else:
@@ -126,21 +132,35 @@ class PitchDeckParser:
         tagged_words = pos_tag(words)
         phrases = []
         current_phrase = []
+
         for word, tag in tagged_words:
             if tag.startswith(('NN', 'JJ')) or '-' in word:
                 current_phrase.append(word)
-                if len(current_phrase) >= 3:
-                    phrases.append(' '.join(current_phrase[-3:]))
-                    current_phrase = current_phrase[-2:]
             else:
-                if current_phrase and len(current_phrase) > 1:
-                    phrases.append(' '.join(current_phrase))
+                if current_phrase:
+                    # Generate all possible phrases from the current sequence
+                    for length in range(2, len(current_phrase) + 1):
+                        for start in range(len(current_phrase) - length + 1):
+                            phrase = ' '.join(current_phrase[start:start + length])
+                            if length >= 2:
+                                phrases.append(phrase)
                 current_phrase = []
-        if current_phrase and len(current_phrase) > 1:
-            phrases.append(' '.join(current_phrase))
 
+        # Handle the last phrase if it exists
+        if current_phrase:
+            for length in range(2, len(current_phrase) + 1):
+                for start in range(len(current_phrase) - length + 1):
+                    phrase = ' '.join(current_phrase[start:start + length])
+                    if length >= 2:
+                        phrases.append(phrase)
+
+        # Count phrases and prioritize longer phrases
         phrase_counts = Counter(phrases)
-        key_phrases = [phrase for phrase, count in phrase_counts.most_common(top_n) if len(phrase.split()) > 1]
+        sorted_phrases = sorted(
+            phrase_counts.items(),
+            key=lambda x: (-x[1], -len(x[0].split()), x[0])
+        )
+        key_phrases = [phrase for phrase, count in sorted_phrases[:top_n] if len(phrase.split()) > 1]
         return key_phrases if key_phrases else ["No key phrases identified"]
 
     def extract_summary(self, text, max_sentences=3):
@@ -198,6 +218,7 @@ class PitchDeckParser:
             info['problem'] = self.extract_summary(text)
 
         return info
+
 
 class PitchDeck(db.Model):
     __tablename__ = 'pitch_decks'
