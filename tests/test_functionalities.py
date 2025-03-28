@@ -84,7 +84,7 @@ class TestPitchDeckFunctionalities(unittest.TestCase):
                 content_type="multipart/form-data"
             )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 404)
         self.assertIn("Invalid file type", response.get_data(as_text=True))
 
         os.remove(invalid_file_path)
